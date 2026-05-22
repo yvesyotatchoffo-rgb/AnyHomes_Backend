@@ -7,6 +7,8 @@ const buildGuestProspectImage = (req, filename) => {
   return encodeURI(`${origin}/assets/img/Prospect img/${filename}`);
 };
 
+const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v));
+
 const buildGuestLeadUsers = (req) => {
   const images = [
     "abdullah-ali-1w9I6H4aftw-unsplash.jpg",
@@ -29,6 +31,7 @@ const buildGuestLeadUsers = (req) => {
     "seth-doyle-uJ8LNVCBjFQ-unsplash.jpg",
     "shahin-khalaji-qTMRoHOHu0U-unsplash.jpg",
     "sherise-van-dyk-X2OpvAPWSFE-unsplash.jpg",
+    "abdullah-ali-1w9I6H4aftw-unsplash.jpg",
   ];
 
   const names = [
@@ -52,6 +55,7 @@ const buildGuestLeadUsers = (req) => {
     "Alexandre Caron",
     "Claire Moulin",
     "Thomas Barbier",
+    "Elise Fontaine",
   ];
 
   const cities = [
@@ -75,15 +79,45 @@ const buildGuestLeadUsers = (req) => {
     "Angers",
     "Metz",
     "Perpignan",
+    "Poitiers",
   ];
 
-  return images.map((filename, index) => ({
-    _id: `guest-user-${String(index + 1).padStart(3, "0")}`,
-    fullName: names[index],
-    image: buildGuestProspectImage(req, filename),
-    city: cities[index],
-    country: "France",
-  }));
+    return images.map((filename, index) => {
+        const id = `guest-user-${String(index + 1).padStart(3, "0")}`;
+        // deterministic checks for mock data
+        const isDocumentVerified = index % 3 === 0; // every 3rd user has document-verified
+        const isDeclDocumentVerified = index % 4 === 0; // every 4th user has declarative-verified
+        const documentGrade = isDocumentVerified ? (index % 5 === 0 ? "A" : "B") : "C";
+
+        // simple deterministic scoring heuristic for mock financing probability
+        let financingProbability = 35;
+        financingProbability += isDocumentVerified ? 30 : 0;
+        financingProbability += isDeclDocumentVerified ? 20 : 0;
+        financingProbability += (index % 5) * 2; // small variance
+        financingProbability = clamp(financingProbability, 5, 99);
+
+        return {
+            _id: id,
+            fullName: names[index],
+            image: buildGuestProspectImage(req, filename),
+            city: cities[index],
+            country: "France",
+            // Financial check fields used by frontend to show background checks and score
+            isDocumentVerified,
+            isDeclDocumentVerified,
+            documentGrade,
+            financialChecks: {
+                document: {
+                    checked: isDocumentVerified,
+                    grade: documentGrade,
+                },
+                declarative: {
+                    checked: isDeclDocumentVerified,
+                },
+                financingProbability, // integer 0-100
+            },
+        };
+    });
 };
 
 const buildGuestInterestCards = (req) => {
@@ -126,8 +160,8 @@ const buildGuestInterestCards = (req) => {
 
   const saleFunnelSteps = [
     {
-      funnelStatus: "interest sent",
-      title: "Interest sent",
+      funnelStatus: "interest received",
+      title: "Interest received",
       image: "assets/img/dashboard/attractivity/attractivity-1.jpg",
       duration: "2:15",
     },
@@ -138,22 +172,139 @@ const buildGuestInterestCards = (req) => {
       duration: "3:00",
     },
     {
-      funnelStatus: "visit hosted",
-      title: "Visit hosted",
+      funnelStatus: "visit accept by user",
+      title: "Visit booked",
       image: "assets/img/dashboard/attractivity/attractivity-3.jpg",
       duration: "2:40",
+      ownerVisitDate: new Date("2026-06-12T10:30:00Z"),
+      finalVisitDate: { date: "2026-06-12", from: "10:30", to: "11:15" },
     },
     {
-      funnelStatus: "offer sent",
-      title: "Offer sent",
+      funnelStatus: "visit hosted",
+      title: "The visit took place on",
       image: "assets/img/dashboard/attractivity/attractivity-4.jpg",
-      duration: "1:55",
+      duration: "2:50",
+      userVisitDate: new Date("2026-06-12T10:30:00Z"),
+      finalVisitDate: { date: "2026-06-12", from: "10:30", to: "11:15" },
+      review: { rating: 4.8, comment: "Très bonne visite, intéressant." },
     },
     {
-      funnelStatus: "contract signed by user",
-      title: "Contract signed",
+      funnelStatus: "review submit by user",
+      title: "Visit review received",
       image: "assets/img/dashboard/attractivity/attractivity-5.jpg",
       duration: "2:30",
+      review: { rating: 4.8, comment: "Buyer review received." },
+    },
+    {
+      funnelStatus: "buyer requested for document",
+      title: "Document Request Received",
+      image: "assets/img/dashboard/attractivity/attractivity-2.jpg",
+      duration: "3:00",
+      documents: {
+        requested: true,
+        requestedBy: "Bookaroo Owner",
+        files: [{ name: "DPE.pdf", status: "requested" }],
+      },
+    },
+    {
+      funnelStatus: "document send by owner",
+      title: "Document sent",
+      image: "assets/img/dashboard/attractivity/attractivity-1.jpg",
+      duration: "2:10",
+      documents: {
+        requested: true,
+        sentBy: "Nora Laurent",
+        files: [
+          { name: "DPE.pdf", status: "sent" },
+          { name: "Titre de propriété.pdf", status: "sent" },
+        ],
+      },
+    },
+    {
+      funnelStatus: "offer submit by user",
+      title: "Purchase offer received",
+      image: "assets/img/dashboard/attractivity/attractivity-3.jpg",
+      duration: "2:45",
+      interestType: "offer sent",
+      makeOfferAmount: 875000,
+      makeOfferDescription: "Achat 875 000 € avec date d'emménagement 01/08/2026.",
+      makeOfferMovinDate: "2026-08-01",
+      makeOfferValidDate: "2026-07-01",
+      buyerPrice: {
+        amount: 875000,
+        fundingType: ["Mortgage"],
+        conditions: ["Subject to financing approval"],
+      },
+    },
+    {
+      funnelStatus: "offer submit by owner",
+      title: "You sent a counter-offer",
+      image: "assets/img/dashboard/attractivity/attractivity-4.jpg",
+      duration: "2:20",
+      interestType: "offer sent",
+      makeOfferAmount: 895000,
+      makeOfferDescription: "Contre-proposition 895 000 € - dossier à finaliser.",
+      makeOfferMovinDate: "2026-08-15",
+      makeOfferValidDate: "2026-07-05",
+      buyerPrice: {
+        amount: 895000,
+        fundingType: ["Mortgage"],
+        conditions: ["Dossier complet à finaliser"],
+      },
+    },
+    {
+      funnelStatus: "offer accept by owner",
+      title: "Offer accepted",
+      image: "assets/img/dashboard/attractivity/attractivity-5.jpg",
+      duration: "2:55",
+      interestType: "offer sent",
+      makeOfferAmount: 895000,
+      makeOfferDescription: "Offre acceptée par le vendeur.",
+      makeOfferMovinDate: "2026-08-15",
+      makeOfferValidDate: "2026-07-05",
+      offerStatus: true,
+      finalPrice: 895000,
+      buyerPrice: {
+        amount: 895000,
+        fundingType: ["Mortgage"],
+      },
+    },
+    {
+      funnelStatus: "preslot opened by owner",
+      title: "You opened pre-sale signing date",
+      image: "assets/img/dashboard/attractivity/attractivity-2.jpg",
+      duration: "3:05",
+      finalSignSlot: { date: "2026-09-01", from: "11:00", to: "12:00" },
+      ownerSigned: false,
+    },
+    {
+      funnelStatus: "preslot accept by owner",
+      title: "Pre-sale signing",
+      image: "assets/img/dashboard/attractivity/attractivity-1.jpg",
+      duration: "2:35",
+      finalSignSlot: { date: "2026-09-01", from: "11:00", to: "12:00" },
+      userSigned: true,
+      ownerSigned: true,
+    },
+    {
+      funnelStatus: "saleslot accept by user",
+      title: "BuyerName booked a final sale signing date - ...",
+      image: "assets/img/dashboard/attractivity/attractivity-3.jpg",
+      duration: "2:45",
+      finalSaleSlot: { date: "2026-09-20", from: "14:00", to: "15:00" },
+      userSale: new Date("2026-09-20T14:00:00Z"),
+    },
+    {
+      funnelStatus: "confirmation by user",
+      title: "Final sale signing completed",
+      image: "assets/img/dashboard/attractivity/attractivity-4.jpg",
+      duration: "3:10",
+      finalContract: new Date("2026-09-20T15:00:00Z"),
+      ownerSigned: true,
+      userSigned: true,
+      applicationAccepted: true,
+      propertyTransferRequest: true,
+      interestStatus: "completed",
     },
   ];
 
@@ -171,39 +322,81 @@ const buildGuestInterestCards = (req) => {
       duration: "2:10",
     },
     {
-      funnelStatus: "visit hosted",
-      title: "Visit hosted",
+      funnelStatus: "visit accept by user",
+      title: "Visit booked",
       image: "assets/img/dashboard/attractivity/attractivity-8.jpg",
       duration: "3:05",
+      finalVisitDate: { date: "2026-06-12", from: "10:30", to: "11:15" },
     },
     {
-      funnelStatus: "offer sent",
-      title: "Offer sent",
+      funnelStatus: "visit hosted",
+      title: "Visit hosted",
       image: "assets/img/dashboard/attractivity/attractivity-9.jpg",
       duration: "2:12",
+      finalVisitDate: { date: "2026-06-12", from: "10:30", to: "11:15" },
     },
     {
-      funnelStatus: "renter assigned",
-      title: "Renter assigned",
+      funnelStatus: "review submit by user",
+      title: "Visit review received",
       image: "assets/img/dashboard/attractivity/attractivity-10.jpg",
       duration: "2:57",
+      review: { rating: 4.7, comment: "Visite bien déroulée, dossier en cours." },
+    },
+    {
+      funnelStatus: "application submit by user",
+      title: "Application file received",
+      image: "assets/img/dashboard/attractivity/attractivity-6.jpg",
+      duration: "2:40",
+      applicationFile: {
+        filename: "application-rent.pdf",
+        submittedAt: "2026-06-10T09:00:00Z",
+        status: "received",
+      },
+    },
+    {
+      funnelStatus: "owner accept the application",
+      title: "You accepted the application",
+      image: "assets/img/dashboard/attractivity/attractivity-7.jpg",
+      duration: "3:00",
+      applicationAccepted: true,
+      interestStatus: "completed",
     },
   ];
 
-  const saleCards = Array.from({ length: 10 }, (_, index) => {
-    const step = saleFunnelSteps[index % saleFunnelSteps.length];
+  const saleCards = saleFunnelSteps.map((step, index) => {
     const buyer = guestBuyers[index];
     return {
       _id: `guest-interest-sale-${index + 1}`,
       buyerId: buyer,
+      buyerName: buyer.fullName,
       propertyId: saleProperty,
       propertyType: "sale",
       funnelStatus: step.funnelStatus,
       status: "active",
-      interestStatus: step.funnelStatus === "contract signed by user" ? "completed" : "pending",
-      totalLeads: 10,
-      offerStatus: step.funnelStatus === "offer sent",
-      applicationAccepted: step.funnelStatus === "contract signed by user",
+      interestStatus: step.interestStatus ?? (step.funnelStatus === "confirmation by user" ? "completed" : "pending"),
+      totalLeads: saleFunnelSteps.length,
+      guestFlow: index + 1,
+      offerStatus: step.offerStatus ?? false,
+      applicationAccepted: step.applicationAccepted ?? false,
+      interestType: step.interestType ?? "interest sent",
+      makeOfferAmount: step.makeOfferAmount,
+      makeOfferDescription: step.makeOfferDescription,
+      makeOfferMovinDate: step.makeOfferMovinDate,
+      makeOfferValidDate: step.makeOfferValidDate,
+      buyerPrice: step.buyerPrice,
+      ownerPrice: step.ownerPrice,
+      finalPrice: step.finalPrice,
+      review: step.review,
+      documents: step.documents,
+      finalSignSlot: step.finalSignSlot,
+      finalSaleSlot: step.finalSaleSlot,
+      finalContract: step.finalContract,
+      userSigned: step.userSigned,
+      ownerSigned: step.ownerSigned,
+      propertyTransferRequest: step.propertyTransferRequest,
+      userVisitDate: step.userVisitDate,
+      ownerVisitDate: step.ownerVisitDate,
+      finalVisitDate: step.finalVisitDate,
       funnel: {
         youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         title: step.title,
@@ -213,20 +406,27 @@ const buildGuestInterestCards = (req) => {
     };
   });
 
-  const rentCards = Array.from({ length: 10 }, (_, index) => {
-    const step = rentFunnelSteps[index % rentFunnelSteps.length];
-    const buyer = guestBuyers[index + 10];
+  const rentCards = rentFunnelSteps.map((step, index) => {
+    const buyer = guestBuyers[14 + index];
     return {
       _id: `guest-interest-rent-${index + 1}`,
       buyerId: buyer,
+      buyerName: buyer.fullName,
       propertyId: rentProperty,
       propertyType: "rent",
       funnelStatus: step.funnelStatus,
       status: "active",
-      interestStatus: step.funnelStatus === "renter assigned" ? "completed" : "pending",
-      totalLeads: 10,
-      offerStatus: step.funnelStatus === "offer sent",
-      applicationAccepted: step.funnelStatus === "renter assigned",
+      interestStatus: step.interestStatus ?? (step.funnelStatus === "owner accept the application" ? "completed" : "pending"),
+      totalLeads: rentFunnelSteps.length,
+      guestFlow: index + 1,
+      offerStatus: step.offerStatus ?? false,
+      applicationAccepted: step.applicationAccepted ?? false,
+      interestType: step.interestType ?? "interest sent",
+      applicationFile: step.applicationFile,
+      buyerPrice: step.buyerPrice,
+      finalHomeInventorySlot: step.finalHomeInventorySlot,
+      finalSignSlot: step.finalSignSlot,
+      propertyTransferRequest: step.propertyTransferRequest,
       funnel: {
         youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         title: step.title,
