@@ -51,6 +51,12 @@ const parseCSV = (data) => {
   });
 };
 
+const parseObjectId = (value) => {
+  return mongoose.Types.ObjectId.isValid(value)
+    ? new mongoose.Types.ObjectId(value)
+    : null;
+};
+
 function filterByPrice(priceRange) {
   if (priceRange) {
     // Split price range into start and end prices
@@ -135,6 +141,94 @@ const buildGuestPropertyImage = (req, filePath) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
   const path = filePath.startsWith("/") ? filePath : `/${filePath}`;
   return encodeURI(`${origin}${path}`);
+};
+
+const buildGuestPropertyDetail = (req, id) => {
+  const guestProperties = buildGuestProperties(req);
+  const property = guestProperties.find((itm) => itm._id === id);
+  if (!property) return null;
+  return {
+    ...property,
+    sellerFiles: {
+      identityProof: [
+        {
+          fileName: "guest-carte-didentite.pdf",
+          originalname: "Carte d’identité",
+          checked: true,
+        },
+      ],
+      familySituation: [
+        {
+          fileName: "guest-certificat-situation-familiale.pdf",
+          originalname: "Certificat de situation familiale",
+          checked: true,
+        },
+      ],
+      addressProof: [
+        {
+          fileName: "guest-justificatif-domicile-facture-edf.pdf",
+          originalname: "Justificatif de domicile - facture EDF",
+          checked: true,
+        },
+      ],
+      carrezLaw: [
+        {
+          fileName: "guest-carrez-law-note.pdf",
+          originalname: "Certificat Loi Carrez",
+          checked: true,
+        },
+      ],
+      technicalDiagnostic: [
+        {
+          fileName: "guest-diagnostic-technique.pdf",
+          originalname: "Diagnostic technique",
+          checked: true,
+        },
+      ],
+      coOwnership: [
+        {
+          fileName: "guest-copropriete-reglement.pdf",
+          originalname: "Règlement de copropriété",
+          checked: true,
+        },
+      ],
+      personalContribution: [
+        {
+          fileName: "guest-attestation-epargne-personnelle.pdf",
+          originalname: "Attestation d’épargne personnelle",
+          checked: true,
+        },
+      ],
+      condominiumBooklet: [
+        {
+          fileName: "guest-carnet-copropriete.pdf",
+          originalname: "Carnet de copropriété",
+          checked: true,
+        },
+      ],
+      minutesOfGeneral: [
+        {
+          fileName: "guest-assemblee-generale.pdf",
+          originalname: "Procès-verbal d’assemblée générale",
+          checked: true,
+        },
+      ],
+      titleDeed: [
+        {
+          fileName: "guest-titre-de-propriete.pdf",
+          originalname: "Titre de propriété",
+          checked: true,
+        },
+      ],
+      otherDocs: [
+        {
+          fileName: "guest-autres-documents.pdf",
+          originalname: "Autres documents",
+          checked: true,
+        },
+      ],
+    },
+  };
 };
 
 const buildGuestProperties = (req) => {
@@ -290,10 +384,40 @@ module.exports = {
     try {
       let id = req.query.id;
       let userId = req.query.userId;
+      const isGuestRequest = ["true", true, "1", 1].includes(req.query.guest) || String(id || "").startsWith("guest-");
       if (!id) {
         return res.status(400).json({
           success: false,
           message: constants.PROPERTY.ID_MISSING,
+        });
+      }
+
+      if (isGuestRequest) {
+        const propertyDetail = buildGuestPropertyDetail(req, id);
+        if (!propertyDetail) {
+          return res.status(404).json({
+            success: false,
+            message: "Property not found.",
+          });
+        }
+
+        const data = {
+          propertyDetail,
+          totalfollower: 0,
+          totalProperty: 0,
+          totallikes: 0,
+          favourite_details: false,
+          followunfollows_details: false,
+          role: "guest",
+          companyName: "Guest Property",
+          ownerId: "guest-owner",
+          isInterested: false,
+          totalInquries: 0,
+        };
+
+        return res.status(200).json({
+          success: true,
+          data,
         });
       }
 
@@ -365,23 +489,25 @@ module.exports = {
       let favourite_details = false;
       let followunfollows_details = false;
       if (userId) {
-        userId = new mongoose.Types.ObjectId(userId);
-        let favouriteData = await db.favorites.findOne({
-          property_id: id,
-          user_id: userId,
-          like: true,
-        });
-        if (favouriteData) {
-          favourite_details = true;
-        }
+        const userObjectId = parseObjectId(userId);
+        if (userObjectId) {
+          let favouriteData = await db.favorites.findOne({
+            property_id: id,
+            user_id: userObjectId,
+            like: true,
+          });
+          if (favouriteData) {
+            favourite_details = true;
+          }
 
-        let followData = await db.followUnfollow.findOne({
-          property_id: id,
-          user_id: userId,
-          follow_unfollow: true,
-        });
-        if (followData) {
-          followunfollows_details = true;
+          let followData = await db.followUnfollow.findOne({
+            property_id: id,
+            user_id: userObjectId,
+            follow_unfollow: true,
+          });
+          if (followData) {
+            followunfollows_details = true;
+          }
         }
       }
       propertyDetail = Object.assign({}, propertyDetail, {
@@ -475,7 +601,10 @@ module.exports = {
       if (pageSize > 100) pageSize = 100;
       var query = {};
       if (agencyId) {
-        query.agency = new mongoose.Types.ObjectId(agencyId);
+        const agencyObjectId = parseObjectId(agencyId);
+        if (agencyObjectId) {
+          query.agency = agencyObjectId;
+        }
       }
 
       // let loggedInUserId = req.identity.id;
@@ -594,7 +723,10 @@ module.exports = {
         query.request_status = request_status;
       }
       if (categories) {
-        query.categories = new mongoose.Types.ObjectId(categories);
+        const categoryId = parseObjectId(categories);
+        if (categoryId) {
+          query.categories = categoryId;
+        }
       }
       if (propertyType) {
         query.propertyType = propertyType;
@@ -624,7 +756,10 @@ module.exports = {
         }
       }
       if (addedBy) {
-        query.addedBy = new mongoose.Types.ObjectId(addedBy);
+        const addedById = parseObjectId(addedBy);
+        if (addedById) {
+          query.addedBy = addedById;
+        }
       }
       if (address) {
         address = await string_toString_array(address);
@@ -636,10 +771,13 @@ module.exports = {
       if (amenities) {
         amenities = amenities
           .split(",")
-          .map((id) => new mongoose.Types.ObjectId(id.trim()));
-        query.amenities = {
-          $in: amenities
-        };
+          .map((id) => parseObjectId(id.trim()))
+          .filter(Boolean);
+        if (amenities.length) {
+          query.amenities = {
+            $in: amenities
+          };
+        }
       }
       if (cooking) {
         let cookingArray = cooking.split(",").map(id => id.trim());
@@ -700,7 +838,10 @@ module.exports = {
       }
       let userIdObj;
       if (userId) {
-        userIdObj = new mongoose.Types.ObjectId(userId);
+        const parsedUserId = parseObjectId(userId);
+        if (parsedUserId) {
+          userIdObj = parsedUserId;
+        }
       }
       if (maxDistance) {
         maxDistance = Number(maxDistance);
@@ -720,6 +861,7 @@ module.exports = {
       }
       ///
       let loggedInUserData;
+      let financingProbabilityMatch = {};
 
       let documentVerificationMatch;
       let documentGradeMatch;
@@ -741,12 +883,21 @@ module.exports = {
 
         const userDocumentVerified = loggedInUserData?.isDocumentVerified;
         const userDeclDocumentVerified = loggedInUserData?.isDeclDocumentVerified;
+        const userFinancingScore = Number(loggedInUserData?.financingReferenceScore ?? 0);
 
         documentGradeMatch = userGrade && allowedGradesMap[userGrade] ? {
           chooseDocumentGrade: {
             $in: allowedGradesMap[userGrade]
           }
         } : {};
+
+        if (userFinancingScore > 0) {
+          financingProbabilityMatch = {
+            chooseDocumentMinProbability: {
+              $lte: Math.min(100, Math.max(0, userFinancingScore))
+            }
+          };
+        }
 
         documentVerificationMatch = {
           ...(userDocumentVerified ? {} : {
@@ -765,6 +916,14 @@ module.exports = {
 
       ///
       const pipeline = [
+        {
+          $match: {
+            ...query,
+            ...documentGradeMatch,
+            ...financingProbabilityMatch,
+            ...documentVerificationMatch,
+          },
+        },
         // {
         //   $geoNear: {
         //     near: {
@@ -775,13 +934,6 @@ module.exports = {
         //     spherical: true,
         //     ...(maxDistance ? { maxDistance: maxDistance } : {}),
         //   },
-        // },
-
-        // {
-        //   $match: {
-        //     ...query,
-        //     ...documentGradeMatch,
-        //   }
         // },
         {
           $lookup: {
@@ -1095,6 +1247,7 @@ module.exports = {
             exactLocation: 1,
             randomLocation: 1,
             chooseDocumentGrade: 1,
+            chooseDocumentMinProbability: 1,
             isChoosedDocumentVerified: 1,
             isChoosedDeclDocumentVerified: 1,
             maximumLead: 1,
@@ -1151,7 +1304,7 @@ module.exports = {
           $match: {
             ...query,
             ...documentGradeMatch,
-            ...documentGradeMatch,
+            ...financingProbabilityMatch,
             ...documentVerificationMatch
           }
         },
@@ -1204,14 +1357,19 @@ module.exports = {
 
 
       if (schoolId) {
-        const schoolIdArray = schoolId.split(",").map(id => new mongoose.Types.ObjectId(id.trim()));
-        pipeline.push({
-          $match: {
-            "linkedSchools.schoolId": {
-              $in: schoolIdArray
+        const schoolIdArray = schoolId
+          .split(",")
+          .map((id) => parseObjectId(id.trim()))
+          .filter(Boolean);
+        if (schoolIdArray.length) {
+          pipeline.push({
+            $match: {
+              "linkedSchools.schoolId": {
+                $in: schoolIdArray
+              }
             }
-          }
-        });
+          });
+        }
       }
 
       let group_stage = {
@@ -1505,6 +1663,9 @@ module.exports = {
           chooseDocumentGrade: {
             $first: "$chooseDocumentGrade"
           },
+          chooseDocumentMinProbability: {
+            $first: "$chooseDocumentMinProbability"
+          },
           isChoosedDocumentVerified: {
             $first: "$isChoosedDocumentVerified"
           },
@@ -1531,6 +1692,7 @@ module.exports = {
         total = await Property.countDocuments({
           ...query,
           ...documentGradeMatch,
+          ...financingProbabilityMatch,
           ...documentVerificationMatch,
         });
       } else {
@@ -2824,7 +2986,10 @@ module.exports = {
       } = req.query;
       let query = {};
       if (agency) {
-        query.agency = new mongoose.Types.ObjectId(agency);
+        const agencyObjectId = parseObjectId(agency);
+        if (agencyObjectId) {
+          query.agency = agencyObjectId;
+        }
       }
       query.isDeleted = false;
       const pipeline = [{
@@ -3459,7 +3624,14 @@ module.exports = {
           message: "Payload Missing"
         })
       }
-      query.addedBy = new mongoose.Types.ObjectId(userId);
+      const addedByUserId = parseObjectId(userId);
+      if (!addedByUserId) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid userId"
+        })
+      }
+      query.addedBy = addedByUserId;
       if (propertyType) {
         query.propertyType = propertyType;
       }

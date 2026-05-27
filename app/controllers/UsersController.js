@@ -8,6 +8,7 @@ const jwt = require("jsonwebtoken");
 const constants = require("../utls/constants");
 const Emails = require("../Emails/onBoarding");
 const helper = require("../utls/helper");
+const scoreService = require("../services/financialScore.service");
 
 function generateOTP() {
   let digits = "0123456789";
@@ -656,6 +657,161 @@ module.exports = {
   userDetail: async (req, res) => {
     try {
       const id = req.query.id;
+      const isGuest = String(req.query.guest) === 'true';
+
+      if (isGuest) {
+        const user = {
+          _id: 'guest-user-000',
+          id: 'guest-user-000',
+          fullName: 'Bookaroo Guest',
+          email: 'guest@bookaroo.local',
+          accountType: 'guest',
+          isGuest: true,
+          renterFilesCount: 4,
+          renterFiles: {
+            identityProof: [
+              {
+                fileName: 'guest-carte-didentite.pdf',
+                originalname: 'Carte d’identité',
+                checked: true,
+              },
+            ],
+            addressProof: [
+              {
+                fileName: 'guest-justificatif-domicile.pdf',
+                originalname: 'Justificatif de domicile (facture EDF)',
+                checked: true,
+              },
+            ],
+            salarySlips: [
+              {
+                fileName: 'guest-bulletin-salaire-janvier.pdf',
+                originalname: 'Bulletin de salaire - janvier',
+                checked: true,
+              },
+              {
+                fileName: 'guest-bulletin-salaire-fevrier.pdf',
+                originalname: 'Bulletin de salaire - février',
+                checked: true,
+              },
+              {
+                fileName: 'guest-bulletin-salaire-mars.pdf',
+                originalname: 'Bulletin de salaire - mars',
+                checked: true,
+              },
+            ],
+            otherDocs: [
+              {
+                fileName: 'guest-lettre-motivation.pdf',
+                originalname: 'Lettre de motivation',
+                checked: true,
+              },
+            ],
+          },
+          buyerFilesCount: 7,
+          buyerFiles: {
+            identityProof: [
+              {
+                fileName: 'guest-carte-didentite.pdf',
+                originalname: 'Carte d’identité',
+                checked: true,
+              },
+            ],
+            familySituation: [
+              {
+                fileName: 'guest-certificat-situation-familiale.pdf',
+                originalname: 'Certificat de situation familiale',
+                checked: true,
+              },
+            ],
+            addressProof: [
+              {
+                fileName: 'guest-justificatif-domicile-facture-edf.pdf',
+                originalname: 'Justificatif de domicile - facture EDF',
+                checked: true,
+              },
+            ],
+            salarySlips: [
+              {
+                fileName: 'guest-bulletin-salaire-janvier-2026.pdf',
+                originalname: 'Bulletin de salaire janvier 2026',
+                checked: true,
+              },
+              {
+                fileName: 'guest-bulletin-salaire-fevrier-2026.pdf',
+                originalname: 'Bulletin de salaire février 2026',
+                checked: true,
+              },
+              {
+                fileName: 'guest-bulletin-salaire-mars-2026.pdf',
+                originalname: 'Bulletin de salaire mars 2026',
+                checked: true,
+              },
+            ],
+            bankStatement: [
+              {
+                fileName: 'guest-releve-bancaire-janvier.pdf',
+                originalname: 'Relevé bancaire janvier',
+                checked: true,
+              },
+              {
+                fileName: 'guest-releve-bancaire-fevrier.pdf',
+                originalname: 'Relevé bancaire février',
+                checked: true,
+              },
+              {
+                fileName: 'guest-releve-bancaire-mars.pdf',
+                originalname: 'Relevé bancaire mars',
+                checked: true,
+              },
+            ],
+            taxNotice: [
+              {
+                fileName: 'guest-avis-imposition-2024.pdf',
+                originalname: 'Avis d’imposition 2024',
+                checked: true,
+              },
+              {
+                fileName: 'guest-avis-imposition-2023.pdf',
+                originalname: 'Avis d’imposition 2023',
+                checked: true,
+              },
+            ],
+            personalContribution: [
+              {
+                fileName: 'guest-attestation-epargne-personnelle.pdf',
+                originalname: 'Attestation d’épargne personnelle',
+                checked: true,
+              },
+            ],
+          },
+          declarativeBuyerFiles: {
+            BuyOption: 'alone',
+            InvestOption: 'primary',
+            postalCode: '75011',
+          },
+          declarativeRenterFiles: {
+            BuyOption: 'alone',
+            InvestOption: 'primary',
+            postalCode: '',
+          },
+          total_property: 0,
+          total_likes: 0,
+          total_alerts: 0,
+          total_followers: 0,
+          folderCount: 0,
+          totalpropertiesInFolder: 0,
+          rentProperties: 0,
+          saleProperties: 0,
+          offmarketProperties: 0,
+          directoryProperties: 0,
+          propertiesList: [],
+        };
+        return res.status(200).json({
+          success: true,
+          data: user,
+        });
+      }
 
       const user_data = await Users.findOne({
         _id: id,
@@ -727,6 +883,13 @@ module.exports = {
     console.log('@editUserDetails');
     
     try {
+      const isGuest = String(req.query.guest) === 'true';
+      if (isGuest) {
+        return res.status(400).json({
+          success: false,
+          message: 'Guest mode is read-only. Changes are not allowed.',
+        });
+      }
       let data = req.body;
       let userData = await Users.findOne({ _id: data.userId });
       if (userData) {
@@ -772,12 +935,22 @@ module.exports = {
           await db.property.updateMany({ addedBy: data.userId, isDeleted: false }, { identityVerified: false })
         }
 
+        let scoreResult;
+        if (data.declarativeBuyerFiles) {
+          scoreResult = await scoreService.computeFinancialScore({
+            declarativeBuyerFiles: data.declarativeBuyerFiles,
+          });
+          data.financingReferenceScore = scoreResult.score || 0;
+          data.financingReferenceScoreSource = "auto";
+          data.financingReferenceScoreUpdatedAt = new Date();
+        }
 
         await Users.updateOne({ _id: userData._id }, data);
         return res.status(200).json({
           success: true,
           code: 200,
           message: constants.onBoarding.PROFILE_UPDATED,
+          scoringResult: scoreResult || null,
         });
       } else {
         return res.status(400).json({
@@ -3975,18 +4148,20 @@ module.exports = {
 
   rateUserAndVerify: async (req, res) => {
     try {
-      let { userId, documentGrade, isDocumentVerified, isDeclDocumentVerified } = req.body;
+      let { userId, documentGrade, isDocumentVerified, isDeclDocumentVerified, financingReferenceScore } = req.body;
       const allowedGrades = ['A', 'B', 'C', 'D', 'E', "Any"];
+      const normalizedScore = financingReferenceScore != null ? Number(financingReferenceScore) : null;
       if (
         !userId ||
         !documentGrade ||
         isDocumentVerified === null ||
         isDeclDocumentVerified === null ||
-        !allowedGrades.includes(documentGrade.toUpperCase())
+        !allowedGrades.includes(documentGrade.toUpperCase()) ||
+        (financingReferenceScore != null && (isNaN(normalizedScore) || normalizedScore < 0 || normalizedScore > 100))
       ) {
         return res.status(400).json({
           success: false,
-          message: "UserId and valid documentGrades are required."
+          message: "UserId, valid documentGrades and optional financingReferenceScore between 0 and 100 are required."
         })
       }
 
@@ -4010,13 +4185,21 @@ module.exports = {
         })
       }
 
+      const updatePayload = {
+        documentGrade: documentGrade,
+        isDocumentVerified: isDocumentVerified,
+        isDeclDocumentVerified
+      };
+
+      if (normalizedScore != null) {
+        updatePayload.financingReferenceScore = normalizedScore;
+        updatePayload.financingReferenceScoreUpdatedAt = new Date();
+        updatePayload.financingReferenceScoreSource = (isDocumentVerified || isDeclDocumentVerified) ? "verified" : "admin";
+      }
+
       await db.users.updateOne(
         { _id: userId, isDeleted: false },
-        {
-          documentGrade: documentGrade,
-          isDocumentVerified: isDocumentVerified,
-          isDeclDocumentVerified
-        }
+        updatePayload
       )
 
       return res.status(200).json({

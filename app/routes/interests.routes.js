@@ -2,6 +2,7 @@ const interests = require("../controllers/InterestsController.js");
 var router = require("express").Router();
 
 router.post("/add", interests.addInterest);
+router.post("/admin/rateInterest", interests.rateInterest);
 
 //property list based on interest
 router.get("/list", interests.listInterest);

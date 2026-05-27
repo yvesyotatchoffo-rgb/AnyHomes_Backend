@@ -138,6 +138,7 @@ module.exports = (mongoose) => {
             },
             offMarket: { type: Boolean, default: false },
             chooseDocumentGrade: { type: String, enum: ["A", "B", "C", "D", "E", "Any"], default: "Any" },
+            chooseDocumentMinProbability: { type: Number, min: 0, max: 100, default: 0 },
             isChoosedDocumentVerified: { type: Boolean, default: false },
             isChoosedDeclDocumentVerified: { type: Boolean, default: false },
             maximumLead: String,

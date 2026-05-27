@@ -17,6 +17,26 @@ module.exports = (mongoose) => {
             makeOfferAmount: { type: Number, default: 0 },       // key for (make an offer) amount
             makeOfferDescription: String,                   // offer description in (make an offer)
             makeOfferMovinDate: Date,                       // (make an offer) movin date
+            financingReferenceScore: { type: Number, min: 0, max: 100, default: 0 },
+            financingReferenceScoreSource: { type: String, enum: ["auto", "admin", "verified"], default: "auto" },
+            financingProbability: { type: Number, min: 0, max: 100, default: 0 },
+            financialScore: { type: Number, min: 0, max: 100, default: 0 },
+            financialScoreSource: { type: String, enum: ["auto", "admin", "verified"], default: "auto" },
+            scoreStatus: { type: String, default: "OK" },
+            scoreClass: { type: String, default: "" },
+            scoreLabel: { type: String, default: "" },
+            scoreQuantitative: { type: Number, min: 0, max: 70, default: 0 },
+            scoreQualitative: { type: Number, min: 0, max: 30, default: 0 },
+            ratioFinancabilite: { type: Number, default: 0 },
+            capitalFinancable: { type: Number, default: 0 },
+            besoinFinancement: { type: Number, default: 0 },
+            mensualiteDisponible: { type: Number, default: 0 },
+            priceSource: { type: String, default: "" },
+            priceReferenceProjet: { type: Number, default: 0 },
+            referencePricePerSqm: { type: Number, default: 0 },
+            referencePricePostalCode: { type: String, default: "" },
+            surfaceUsedForReference: { type: Number, default: 0 },
+            topReasons: { type: [String], default: [] },
             // makeOfferValidDate: Date,                       // (make an offer) valid date
             userVisitDate: { type: Date},
             ownerVisitDate: { type: Date},

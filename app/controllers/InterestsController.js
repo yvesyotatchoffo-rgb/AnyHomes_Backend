@@ -1,6 +1,7 @@
 const db = require("../models");
 const Emails = require("../Emails/onBoarding");
 const visitInvite = require("../Emails/visitInvite");
+const scoreService = require("../services/financialScore.service");
 
 const buildGuestProspectImage = (req, filename) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
@@ -8,6 +9,49 @@ const buildGuestProspectImage = (req, filename) => {
 };
 
 const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v));
+
+const normalizeScore = (value) => {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return null;
+  return Math.round(Math.max(0, Math.min(100, score)));
+};
+
+const computeFinancingProbability = (referenceScore, property) => {
+  const score = normalizeScore(referenceScore);
+  if (score === null) return 0;
+
+  let finalScore = clamp(score, 0, 100);
+  const price = property?.price || property?.propertyMonthlyCharges || 0;
+  const referencePrice = property?.referencePrice || 0;
+
+  if (referencePrice > 0 && price > 0) {
+    const ratio = price / referencePrice;
+    if (ratio > 1) {
+      finalScore -= Math.round(Math.min(30, (ratio - 1) * 30));
+    } else {
+      finalScore += Math.round(Math.min(15, (1 - ratio) * 15));
+    }
+  }
+
+  return clamp(finalScore, 0, 100);
+};
+
+const estimateScoreFromGrade = (grade) => {
+  switch ((grade || "Any").toUpperCase()) {
+    case "A":
+      return 90;
+    case "B":
+      return 75;
+    case "C":
+      return 55;
+    case "D":
+      return 35;
+    case "E":
+      return 15;
+    default:
+      return 0;
+  }
+};
 
 const buildGuestLeadUsers = (req) => {
   const images = [
@@ -490,6 +534,12 @@ module.exports = {
                     message: "Property not found.",
                 });
             }
+            const scoringResult = await scoreService.computeFinancialScore({
+                declarativeBuyerFiles: findBuyer.declarativeBuyerFiles || {},
+                property,
+            });
+            const referenceScore = scoringResult.score || 0;
+            const financingProbability = referenceScore ? computeFinancingProbability(referenceScore, property) : 0;
             const maxLeadLimit = parseInt(property.maximumLead);
             const findExistingLeads = await db.interests.countDocuments({
                 propertyId,
@@ -550,7 +600,27 @@ module.exports = {
                     makeOfferDescription,
                     makeOfferMovinDate,
                     makeOfferValidDate,
-                    interestType: "offer sent"
+                    interestType: "offer sent",
+                    financingReferenceScore: referenceScore,
+                    financingReferenceScoreSource: "auto",
+                    financingProbability,
+                    financialScore: scoringResult.score || 0,
+                    financialScoreSource: "auto",
+                    scoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
+                    scoreClass: scoringResult.score_class || "",
+                    scoreLabel: scoringResult.score_label || "",
+                    scoreQuantitative: scoringResult.score_quantitatif || 0,
+                    scoreQualitative: scoringResult.score_qualitatif || 0,
+                    ratioFinancabilite: scoringResult.ratio_financabilite || 0,
+                    capitalFinancable: scoringResult.capital_empruntable || 0,
+                    besoinFinancement: scoringResult.besoin_financement || 0,
+                    mensualiteDisponible: scoringResult.mensualite_disponible || 0,
+                    priceSource: scoringResult.price_source || "",
+                    priceReferenceProjet: scoringResult.price_reference_projet || 0,
+                    referencePricePerSqm: scoringResult.reference_price_per_sqm || 0,
+                    referencePricePostalCode: scoringResult.reference_price_postal_code || "",
+                    surfaceUsedForReference: scoringResult.surface_used_for_reference || 0,
+                    topReasons: scoringResult.top_reasons || [],
                 })
 
                 const updatePropertyInterestTime = await db.property.updateOne(
@@ -628,7 +698,27 @@ module.exports = {
                 status: "active",
                 propertyType,
                 interestStatus: "pending",
-                interestType
+                interestType,
+                financingReferenceScore: referenceScore,
+                financingReferenceScoreSource: "auto",
+                financingProbability,
+                financialScore: scoringResult.score || 0,
+                financialScoreSource: "auto",
+                scoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
+                scoreClass: scoringResult.score_class || "",
+                scoreLabel: scoringResult.score_label || "",
+                scoreQuantitative: scoringResult.score_quantitatif || 0,
+                scoreQualitative: scoringResult.score_qualitatif || 0,
+                ratioFinancabilite: scoringResult.ratio_financabilite || 0,
+                capitalFinancable: scoringResult.capital_empruntable || 0,
+                besoinFinancement: scoringResult.besoin_financement || 0,
+                mensualiteDisponible: scoringResult.mensualite_disponible || 0,
+                priceSource: scoringResult.price_source || "",
+                priceReferenceProjet: scoringResult.price_reference_projet || 0,
+                referencePricePerSqm: scoringResult.reference_price_per_sqm || 0,
+                referencePricePostalCode: scoringResult.reference_price_postal_code || "",
+                surfaceUsedForReference: scoringResult.surface_used_for_reference || 0,
+                topReasons: scoringResult.top_reasons || [],
             });
 
 
@@ -703,6 +793,96 @@ module.exports = {
         }
     },
 
+    rateInterest: async (req, res) => {
+        try {
+            const { interestId, financingReferenceScore } = req.body;
+            if (!interestId || financingReferenceScore == null) {
+                return res.status(400).json({
+                    success: false,
+                    message: "interestId and financingReferenceScore are required.",
+                });
+            }
+
+            const normalizedScore = normalizeScore(financingReferenceScore);
+            if (normalizedScore === null) {
+                return res.status(400).json({
+                    success: false,
+                    message: "financingReferenceScore must be a number between 0 and 100.",
+                });
+            }
+
+            const interest = await db.interests.findOne({ _id: interestId, isDeleted: false });
+            if (!interest) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Interest not found.",
+                });
+            }
+
+            const buyer = await db.users.findOne({ _id: interest.buyerId, isDeleted: false });
+            if (!buyer) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Buyer not found.",
+                });
+            }
+
+            const property = await db.property.findOne({ _id: interest.propertyId, isDeleted: false });
+            if (!property) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Property not found.",
+                });
+            }
+
+            const loggedUserId = req.identity?.id;
+            const loggedUser = await db.users.findOne({ _id: loggedUserId });
+            if (!loggedUser || loggedUser.role !== "admin") {
+                return res.status(403).json({
+                    success: false,
+                    message: "You are unauthorized to perform this action.",
+                });
+            }
+
+            const financingProbability = computeFinancingProbability(normalizedScore, property);
+            const scoreSource = (buyer.isDocumentVerified || buyer.isDeclDocumentVerified) ? "verified" : "admin";
+
+            await db.users.updateOne(
+                { _id: buyer._id, isDeleted: false },
+                {
+                    financingReferenceScore: normalizedScore,
+                    financingReferenceScoreSource: scoreSource,
+                    financingReferenceScoreUpdatedAt: new Date(),
+                }
+            );
+
+            await db.interests.updateOne(
+                { _id: interestId, isDeleted: false },
+                {
+                    financingReferenceScore: normalizedScore,
+                    financingReferenceScoreSource: scoreSource,
+                    financingProbability,
+                }
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "Interest financing score updated successfully.",
+                data: {
+                    interestId,
+                    financingReferenceScore: normalizedScore,
+                    financingProbability,
+                },
+            });
+        } catch (err) {
+            return res.status(500).json({
+                success: false,
+                message: "Failed to update interest financing score.",
+                error: err.message,
+            });
+        }
+    },
+
     listInterest: async (req, res) => {
         try {
             const { buyerId, propertyId, propertyType } = req.query;
@@ -759,7 +939,7 @@ module.exports = {
                     select: "propertyTitle address zipcode images name location price propertyType city state country visitSlots changeRequestNote surface rooms bedrooms bathrooms bathroom propertyMonthlyCharges homeInventorySlots signingSlots contractSigned propertyTransferRequest addedBy identityVerified",
                     match: propertyType ? { propertyType: propertyType } : {}
                 })
-                .populate("buyerId", "fullName firstName lastName email city country image createdAt buyerfileIdenityVerification renterfileIdenityVerification isDocumentVerified isDeclDocumentVerified documentGrade")
+                .populate("buyerId", "fullName firstName lastName email city country image createdAt buyerfileIdenityVerification renterfileIdenityVerification isDocumentVerified isDeclDocumentVerified documentGrade financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt")
                 .sort(sorting)
 
 
@@ -785,10 +965,26 @@ module.exports = {
                             }
                         }
 
-                        return {
-                            ...interest.toObject(),
+                        const interestObj = interest.toObject();
+                    const buyerScore = interestObj.financingReferenceScore > 0
+                        ? interestObj.financingReferenceScore
+                        : (interestObj.buyer?.financingReferenceScore > 0
+                            ? interestObj.buyer.financingReferenceScore
+                            : estimateScoreFromGrade(interestObj.buyer?.documentGrade));
+                    const responseFinancingProbability = interestObj.financingProbability > 0
+                        ? interestObj.financingProbability
+                        : computeFinancingProbability(buyerScore, interestObj.propertyId);
+                    const responseFinancingReferenceScoreSource = interestObj.financingReferenceScoreSource
+                        || interestObj.buyer?.financingReferenceScoreSource
+                        || ((interestObj.buyer?.isDocumentVerified || interestObj.buyer?.isDeclDocumentVerified) ? "verified" : "auto");
+
+                    return {
+                            ...interestObj,
                             property: interest.propertyId,
                             buyer: interest.buyerId,
+                            financingReferenceScore: interestObj.financingReferenceScore > 0 ? interestObj.financingReferenceScore : buyerScore,
+                            financingProbability: responseFinancingProbability,
+                            financingReferenceScoreSource: responseFinancingReferenceScoreSource,
                             // youtubeUrl: youtubeUrl || null,
                             // title: title || null,
                             funnel: funnel || null,

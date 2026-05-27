@@ -8,7 +8,8 @@
     "test:guest-flow": "node test/integration/guest_dashboard_flow.test.js",
     "production": "NODE_ENV=production node server.js",
     "start": "cross-env PORT=6089 nodemon server.js",
-    "dev": "cross-env PORT=6089 nodemon"
+    "dev": "cross-env PORT=6089 nodemon",
+    "migrate:grade-to-min-probability": "node scripts/migrate_grade_to_chooseDocumentMinProbability.js"
   },
   "keywords": [
     "Nodejs"

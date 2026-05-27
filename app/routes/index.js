@@ -56,6 +56,8 @@ router.use("/support",require("./support.routes.js"));
 router.use("/adminDashboard", require("./adminDashboard.routes.js"));
 router.use("/dashboard", require("./frontendDashboard.routes.js"));
 router.use("/api/dashboard", require("./frontendDashboard.routes.js"));
+router.use("/score", require("./score.routes"));
+router.use("/scoreParameters", require("./scoreParameters.routes"));
 
 // ── Marketplace de services ────────────────────────────────────────────────
 router.use("/marketplace", require("../modules/services-marketplace/routes/public"));
