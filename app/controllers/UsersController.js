@@ -708,7 +708,7 @@ module.exports = {
               },
             ],
           },
-          buyerFilesCount: 7,
+          buyerFilesCount: 8,
           buyerFiles: {
             identityProof: [
               {
@@ -745,6 +745,13 @@ module.exports = {
               {
                 fileName: 'guest-bulletin-salaire-mars-2026.pdf',
                 originalname: 'Bulletin de salaire mars 2026',
+                checked: true,
+              },
+            ],
+            preAcceptance: [
+              {
+                fileName: 'guest-accord-de-principe.pdf',
+                originalname: 'Lettre d’accord de principe',
                 checked: true,
               },
             ],
