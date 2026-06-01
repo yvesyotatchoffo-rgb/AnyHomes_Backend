@@ -14,6 +14,7 @@ const fs = require("fs");
 const Emails = require("../Emails/onBoarding");
 const { handleServerError } = require("../utls/helper");
 const { STATUS } = require("../utls/enums");
+const scoreService = require("../services/financialScore.service");
 const upload = multer({
   dest: "uploads/", // Destination folder
   limits: {
@@ -862,56 +863,44 @@ module.exports = {
       ///
       let loggedInUserData;
       let financingProbabilityMatch = {};
-
-      let documentVerificationMatch;
-      let documentGradeMatch;
+      let noOffMarketAccess = false;
+      let dynamicRentFiltering = false;
+      let loggedInUserDeclarativeRenterFiles = {};
       if (loggedInUser) {
         loggedInUserData = await db.users.findOne({
           _id: loggedInUser
-        })
-        const userGrade = loggedInUserData?.documentGrade || "Any";
+        });
+        if (loggedInUserData) {
+          const userSaleScore = Number(loggedInUserData?.financingReferenceScore ?? 0);
+          const userRole = loggedInUserData?.role;
+          const isAdminUser = userRole === "admin" || userRole === "staff";
 
-        const allowedGradesMap = {
-          Any: ["A", "B", "C", "D", "E", "Any"],
-          A: ["A", "B", "C", "D", "E", "Any"],
-          B: ["B", "C", "D", "E", "Any"],
-          C: ["C", "D", "E", "Any"],
-          D: ["D", "E", "Any"],
-          E: ["E", "Any"]
-        };
-
-
-        const userDocumentVerified = loggedInUserData?.isDocumentVerified;
-        const userDeclDocumentVerified = loggedInUserData?.isDeclDocumentVerified;
-        const userFinancingScore = Number(loggedInUserData?.financingReferenceScore ?? 0);
-
-        documentGradeMatch = userGrade && allowedGradesMap[userGrade] ? {
-          chooseDocumentGrade: {
-            $in: allowedGradesMap[userGrade]
+          if (offMarket === "true" && !isAdminUser) {
+            const saleThreshold = Math.min(100, Math.max(0, userSaleScore));
+            financingProbabilityMatch = {
+              $or: [
+                { addedBy: loggedInUser },
+                {
+                  $and: [
+                    { propertyType: { $ne: "rent" } },
+                    { chooseDocumentMinProbability: { $lte: saleThreshold } },
+                  ],
+                },
+                {
+                  $and: [
+                    { propertyType: "rent" },
+                  ],
+                },
+              ],
+            };
+            dynamicRentFiltering = true;
+            loggedInUserDeclarativeRenterFiles = loggedInUserData?.declarativeRenterFiles || {};
           }
-        } : {};
-
-        if (userFinancingScore > 0) {
-          financingProbabilityMatch = {
-            chooseDocumentMinProbability: {
-              $lte: Math.min(100, Math.max(0, userFinancingScore))
-            }
-          };
+        } else if (offMarket === "true") {
+          noOffMarketAccess = true;
         }
-
-        documentVerificationMatch = {
-          ...(userDocumentVerified ? {} : {
-            isChoosedDocumentVerified: {
-              $ne: true
-            }
-          }),
-
-          ...(userDeclDocumentVerified ? {} : {
-            isChoosedDeclDocumentVerified: {
-              $ne: true
-            }
-          })
-        };
+      } else if (offMarket === "true") {
+        noOffMarketAccess = true;
       }
 
       ///
@@ -919,9 +908,8 @@ module.exports = {
         {
           $match: {
             ...query,
-            ...documentGradeMatch,
+            ...(noOffMarketAccess ? { _id: null } : {}),
             ...financingProbabilityMatch,
-            ...documentVerificationMatch,
           },
         },
         // {
@@ -1303,9 +1291,7 @@ module.exports = {
         {
           $match: {
             ...query,
-            ...documentGradeMatch,
             ...financingProbabilityMatch,
-            ...documentVerificationMatch
           }
         },
         // {
@@ -1688,28 +1674,51 @@ module.exports = {
 
       const canUseCountDocuments = !schoolType && !schoolStatus && !schoolName && !schoolId;
       let total = 0;
-      if (canUseCountDocuments) {
-        total = await Property.countDocuments({
-          ...query,
-          ...documentGradeMatch,
-          ...financingProbabilityMatch,
-          ...documentVerificationMatch,
-        });
-      } else {
-        const totalResult = await db.property.aggregate([
-          ...pipeline,
-          { $count: "count" },
-        ]);
-        total = totalResult.length ? totalResult[0].count : 0;
+      if (!dynamicRentFiltering) {
+        if (canUseCountDocuments) {
+          total = await Property.countDocuments({
+            ...query,
+            ...financingProbabilityMatch,
+          });
+        } else {
+          const totalResult = await db.property.aggregate([
+            ...pipeline,
+            { $count: "count" },
+          ]);
+          total = totalResult.length ? totalResult[0].count : 0;
+        }
       }
 
       const skipNo = (pageNumber - 1) * pageSize;
-      pipeline.push({
-        $skip: Number(skipNo),
-      }, {
-        $limit: Number(pageSize),
-      });
-      const result = await Property.aggregate([...pipeline]);
+      let result;
+      if (dynamicRentFiltering) {
+        const allResults = await Property.aggregate([...pipeline]);
+        const filteredResults = (await Promise.all(
+          allResults.map(async (property) => {
+            if (String(property.propertyType).toLowerCase() !== "rent") {
+              return property;
+            }
+
+            const renterScoreResult = await scoreService.computeRenterScore({
+              declarativeRenterFiles: loggedInUserDeclarativeRenterFiles,
+              property,
+            });
+            const rentScore = Number(renterScoreResult?.score ?? 0);
+            const threshold = Number(property.chooseDocumentMinProbability ?? 0);
+            return rentScore >= threshold ? property : null;
+          })
+        )).filter(Boolean);
+
+        total = filteredResults.length;
+        result = filteredResults.slice(skipNo, skipNo + pageSize);
+      } else {
+        pipeline.push({
+          $skip: Number(skipNo),
+        }, {
+          $limit: Number(pageSize),
+        });
+        result = await Property.aggregate([...pipeline]);
+      }
       return res.status(200).json({
         success: true,
         message: constants.PROPERTY.RETRIEVED,

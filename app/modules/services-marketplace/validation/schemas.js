@@ -43,6 +43,8 @@ const createOrderSchema = {
   body: {
     serviceId: v.mongoId('Le service'),
     quantity:  v.positiveInt('La quantité'),
+    property_id: v.mongoId('Le bien'),
+    propertyId: v.mongoId('Le bien'),
   },
 };
 

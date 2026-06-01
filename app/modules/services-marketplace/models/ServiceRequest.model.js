@@ -7,10 +7,11 @@ const mongoose = require('mongoose');
 
 const ServiceRequestSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'users', required: true, index: true },
 
     // Snapshots pour l'admin (évite la double jointure)
     userEmail: { type: String },
+    requestEmail: { type: String, trim: true },
     userName: { type: String },
 
     phone: { type: String, required: true, trim: true },
@@ -31,7 +32,7 @@ const ServiceRequestSchema = new mongoose.Schema(
       index: true,
     },
     processedAt: { type: Date, default: null },
-    processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'users', default: null },
     adminNote: { type: String, default: '' },
   },
   { timestamps: true }

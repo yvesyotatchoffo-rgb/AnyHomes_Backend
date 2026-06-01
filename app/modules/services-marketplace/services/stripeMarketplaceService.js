@@ -31,9 +31,11 @@ const CURRENCY = 'eur';
  * @param {string}  params.serviceTitle    - Titre du service (description)
  * @returns {Object} Stripe PaymentIntent
  */
-exports.createPaymentIntent = async ({ amountTTC, stripeAccountId, orderId, buyerEmail, serviceTitle }) => {
+exports.createPaymentIntent = async ({ amountTTC, stripeAccountId, orderId, buyerEmail, serviceTitle, feeAmountCents }) => {
   const amountCents = Math.round(amountTTC * 100); // Stripe travaille en centimes
-  const commissionCents = Math.round(amountCents * COMMISSION_RATE);
+  const applicationFeeAmount = Number.isFinite(feeAmountCents)
+    ? Math.round(feeAmountCents)
+    : Math.round(amountCents * COMMISSION_RATE);
 
   const paymentIntentParams = {
     amount: amountCents,
@@ -50,7 +52,7 @@ exports.createPaymentIntent = async ({ amountTTC, stripeAccountId, orderId, buye
   // Si le pro a un compte Stripe Connect : transfert automatique à la capture
   if (stripeAccountId) {
     paymentIntentParams.transfer_data = { destination: stripeAccountId };
-    paymentIntentParams.application_fee_amount = commissionCents;
+    paymentIntentParams.application_fee_amount = applicationFeeAmount;
   }
 
   return stripe.paymentIntents.create(paymentIntentParams);

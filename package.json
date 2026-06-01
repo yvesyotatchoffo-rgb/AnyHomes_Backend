@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "test": "node test/unit/frontendDashboardController.guest.test.js",
+    "test:renter-score": "node test/unit/renterScore.service.test.js",
     "test:guest-flow": "node test/integration/guest_dashboard_flow.test.js",
     "production": "NODE_ENV=production node server.js",
     "start": "cross-env PORT=6089 nodemon server.js",
@@ -24,6 +25,7 @@
     "body-parser": "^2.2.0",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
+    "cross-env": "^10.1.0",
     "csv-parse": "^6.2.1",
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",

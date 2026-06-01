@@ -5,6 +5,7 @@ const ServiceOrderFrSchema = new mongoose.Schema({
   proSnapshot: { type: Object, required: true }, // snapshot du pro
   buyer: { type: mongoose.Schema.Types.ObjectId, ref: 'users', required: true },
   service: { type: mongoose.Schema.Types.ObjectId, ref: 'ProService_fr', required: true },
+  property_id: { type: mongoose.Schema.Types.ObjectId, ref: 'properties', default: null },
   status: { type: String, enum: [
     'pending_payment', 'paid', 'payment_failed', 'accepted_by_pro', 'in_progress', 'delivered_by_pro', 'cancellation_requested', 'confirmed_by_buyer', 'litigation_opened', 'payout_released', 'cancelled', 'refunded'
   ], default: 'pending_payment' },
@@ -14,7 +15,11 @@ const ServiceOrderFrSchema = new mongoose.Schema({
   cancellationResponse: { type: Object, default: null },
   cancellationRequestedAt: { type: Date, default: null },
   totalPriceTTC: { type: Number, required: true },
-  commissionHT: { type: Number, required: true },
+  totalPriceHT: { type: Number, default: 0 },
+  vatAmount: { type: Number, default: 0 },
+  commissionHT: { type: Number, default: 0 },
+  platformAmount: { type: Number, default: 0 },
+  proAmount: { type: Number, default: 0 },
   stripePaymentIntentId: { type: String },
   stripePayoutId: { type: String },
   paidAt: { type: Date },
@@ -31,5 +36,11 @@ const ServiceOrderFrSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
+
+ServiceOrderFrSchema.virtual('propertyId').get(function () {
+  return this.property_id;
+});
+ServiceOrderFrSchema.set('toObject', { virtuals: true });
+ServiceOrderFrSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('ServiceOrder_fr', ServiceOrderFrSchema);

@@ -27,10 +27,18 @@ exports.createRequest = async (req, res) => {
     }
 
     const lang = (req.body.lang || req.query.lang || 'fr') === 'en' ? 'en' : 'fr';
-    const { phone, categoryId, categoryName: bodyCategoryName, description } = req.body || {};
+    const { phone, email, categoryId, categoryName: bodyCategoryName, description } = req.body || {};
 
     if (!phone || !String(phone).trim()) {
       return res.status(400).json({ success: false, message: 'Le numéro de téléphone est obligatoire.' });
+    }
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({ success: false, message: 'L\'email est obligatoire.' });
+    }
+    const normalizedEmail = String(email).trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: 'L\'email est invalide.' });
     }
     if (!categoryId && !bodyCategoryName) {
       return res.status(400).json({ success: false, message: 'La catégorie est obligatoire.' });
@@ -59,6 +67,7 @@ exports.createRequest = async (req, res) => {
     const request = await ServiceRequest.create({
       user: user._id,
       userEmail: user.email,
+      requestEmail: normalizedEmail,
       userName: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.fullName || user.email,
       phone: String(phone).trim(),
       category: categoryDoc ? categoryDoc._id : undefined,
@@ -73,6 +82,7 @@ exports.createRequest = async (req, res) => {
       const html = `
         <h2>Nouvelle demande de service</h2>
         <p><strong>Utilisateur :</strong> ${request.userName} (${request.userEmail || 'email inconnu'})</p>
+        <p><strong>Email de contact :</strong> ${request.requestEmail}</p>
         <p><strong>Téléphone :</strong> ${request.phone}</p>
         <p><strong>Catégorie :</strong> ${request.categoryName}</p>
         <p><strong>Description :</strong></p>
@@ -127,6 +137,7 @@ exports.adminListRequests = async (req, res) => {
         { description: { $regex: req.query.q, $options: 'i' } },
         { categoryName: { $regex: req.query.q, $options: 'i' } },
         { userEmail: { $regex: req.query.q, $options: 'i' } },
+        { requestEmail: { $regex: req.query.q, $options: 'i' } },
         { userName: { $regex: req.query.q, $options: 'i' } },
       ];
     }
@@ -151,6 +162,41 @@ exports.adminListRequests = async (req, res) => {
       data: items,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * GET /admin/marketplace/requests/:id
+ */
+exports.adminGetRequestDetail = async (req, res) => {
+  try {
+    const request = await ServiceRequest.findById(req.params.id)
+      .populate('user', 'firstName lastName email mobileNo')
+      .populate('processedBy', 'firstName lastName email')
+      .lean();
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Demande introuvable.' });
+    }
+
+    return res.json({ success: true, data: request });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * DELETE /admin/marketplace/requests/:id
+ */
+exports.adminDeleteRequest = async (req, res) => {
+  try {
+    const request = await ServiceRequest.findByIdAndDelete(req.params.id);
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Demande introuvable.' });
+    }
+    return res.json({ success: true, message: 'Demande supprimée' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

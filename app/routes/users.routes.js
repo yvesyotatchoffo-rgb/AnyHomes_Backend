@@ -71,6 +71,7 @@ router.get("/detail", user.userDetail);
  * @responseField message: "User updated successfully."
  */
 router.put("/admin/update-profile", user.adminUpdateProfile);
+router.get("/partner/listing", user.getPartnerPros);
 // router.put("/manager/update-profile", user.ManagerUpdateProfile);
 
 /** Manager

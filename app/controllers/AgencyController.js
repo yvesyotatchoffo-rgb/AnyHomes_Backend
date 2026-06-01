@@ -224,7 +224,7 @@ module.exports = {
 
     agencyListing: async (req, res) => {
         try {
-            let { search, sortBy, page, count, status, isVerified, companyName, role } =
+            let { search, sortBy, page, count, status, isVerified, companyName, role, accountType } =
                 req.query;
             let query = {};
             if (search) {
@@ -236,11 +236,17 @@ module.exports = {
             }
 
             query.isDeleted = false;
-            // query.role = "agency";
             if (role) {
                 query.role = role;
-            } else {
-                query.role = "agency";
+            }
+            if (accountType) {
+                query.accountType = accountType;
+            }
+            if (!role && !accountType) {
+                query.$or = [
+                    { role: "agency" },
+                    { accountType: "pro" },
+                ];
             }
 
             if (isVerified) {
@@ -291,8 +297,20 @@ module.exports = {
 
     exportAgencyListing: async (req, res) => {
         try {
+            let { role, accountType } = req.query;
             let query = {};
-            query.role = "agency";
+            if (role) {
+                query.role = role;
+            }
+            if (accountType) {
+                query.accountType = accountType;
+            }
+            if (!role && !accountType) {
+                query.$or = [
+                    { role: "agency" },
+                    { accountType: "pro" },
+                ];
+            }
             query.isDeleted = false;
             const pipeline = [
                 { $match: query },

@@ -22,6 +22,80 @@ function getModels(lang) {
   };
 }
 
+async function getMarketplaceSettingsDoc() {
+  let settings = await MarketplaceSettings.findOne();
+  if (!settings) {
+    settings = await MarketplaceSettings.create({});
+  }
+  return settings;
+}
+
+function settingsResponse(settings) {
+  const vatPercent = settings.vatPercent ?? 20;
+  const commissionPercentHT = settings.commissionPercent ?? 25;
+  const commissionPercentTTC = Math.round(commissionPercentHT * (1 + vatPercent / 100) * 100) / 100;
+  return {
+    payoutDelayDays: settings.minPayoutDelayDays ?? 3,
+    vatPercent,
+    commissionPercentHT,
+    commissionPercentTTC,
+    maxServicesPerPro: settings.maxServicesPerPro ?? 10,
+  };
+}
+
+exports.getMarketplaceSettings = async (req, res) => {
+  try {
+    const settings = await getMarketplaceSettingsDoc();
+    return res.json({ success: true, data: settingsResponse(settings) });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+exports.updateMarketplaceSettings = async (req, res) => {
+  try {
+    const { payoutDelayDays, vatPercent, commissionPercentHT, commissionPercentTTC, maxServicesPerPro } = req.body;
+    const settings = await getMarketplaceSettingsDoc();
+
+    if (payoutDelayDays !== undefined) {
+      const parsed = Number(payoutDelayDays);
+      if (Number.isNaN(parsed) || parsed < 0) return res.status(400).json({ success: false, message: 'Délai de paiement invalide' });
+      settings.minPayoutDelayDays = parsed;
+    }
+
+    if (vatPercent !== undefined) {
+      const parsed = Number(vatPercent);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return res.status(400).json({ success: false, message: 'Taux de TVA invalide' });
+      settings.vatPercent = parsed;
+    }
+
+    if (commissionPercentHT !== undefined) {
+      const parsed = Number(commissionPercentHT);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return res.status(400).json({ success: false, message: 'Commission HT invalide' });
+      settings.commissionPercent = parsed;
+    }
+
+    if (commissionPercentTTC !== undefined) {
+      const parsed = Number(commissionPercentTTC);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return res.status(400).json({ success: false, message: 'Commission TTC invalide' });
+      const vat = vatPercent !== undefined ? Number(vatPercent) : settings.vatPercent;
+      const computedHT = Math.round((parsed / (1 + vat / 100)) * 100) / 100;
+      settings.commissionPercent = computedHT;
+    }
+
+    if (maxServicesPerPro !== undefined) {
+      const parsed = Number(maxServicesPerPro);
+      if (Number.isNaN(parsed) || parsed < 1) return res.status(400).json({ success: false, message: 'Nombre de services maximum invalide' });
+      settings.maxServicesPerPro = parsed;
+    }
+
+    await settings.save();
+    return res.json({ success: true, data: settingsResponse(settings), message: 'Paramètres marketplace mis à jour' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
 // ─── SERVICES ────────────────────────────────────────────────────────────────
 
 /**
@@ -31,11 +105,21 @@ function getModels(lang) {
 exports.listAllServices = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
-    const { ProService } = getModels(lang);
-    const { status, q, sortBy = 'createdAt', order = 'desc', page = 1, limit = 30 } = req.query;
+    const { ProService, ServiceOrder } = getModels(lang);
+    const { status, q, categoryId, proRole, city, sortBy = 'createdAt', order = 'desc', page = 1, limit = 30 } = req.query;
 
     const filter = {};
     if (status) filter.status = status;
+    if (categoryId) filter.category = categoryId;
+    if (city) filter.city = { $regex: new RegExp(city, 'i') };
+
+    if (proRole) {
+      const roles = String(proRole).split(',').map((r) => r.trim()).filter(Boolean);
+      if (roles.length > 0) {
+        const proIds = await Users.find({ role: { $in: roles }, accountType: 'pro', isDeleted: false }).select('_id').lean();
+        filter.pro = { $in: proIds.map((u) => u._id) };
+      }
+    }
 
     if (q) {
       const searchRegex = new RegExp(q, 'i');
@@ -45,6 +129,7 @@ exports.listAllServices = async (req, res) => {
           { email: { $regex: searchRegex } },
           { firstName: { $regex: searchRegex } },
           { lastName: { $regex: searchRegex } },
+          { city: { $regex: searchRegex } },
         ],
       }).select('_id').lean();
 
@@ -67,18 +152,35 @@ exports.listAllServices = async (req, res) => {
     }
 
     const sortOrder = order === 'asc' ? 1 : -1;
-    const allowedSortFields = ['createdAt', 'priceTTC', 'title', 'status', 'city'];
+    const allowedSortFields = ['createdAt', 'priceTTC', 'title', 'status', 'city', 'saleCount'];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
 
     const skip = (Number(page) - 1) * Number(limit);
     const [services, total] = await Promise.all([
-      ProService.find(filter).sort({ [sortField]: sortOrder }).skip(skip).limit(Number(limit))
-        .populate('pro', 'name email')
+      ProService.find(filter).sort(sortField === 'saleCount' ? { createdAt: sortOrder } : { [sortField]: sortOrder }).skip(skip).limit(Number(limit))
+        .populate('pro', 'name email role city')
         .populate('category', 'name'),
       ProService.countDocuments(filter),
     ]);
 
-    return res.json({ success: true, data: services, pagination: { page: Number(page), limit: Number(limit), total } });
+    const serviceIds = services.map((service) => service._id);
+    const saleStatuses = ['paid', 'accepted_by_pro', 'in_progress', 'delivered_by_pro', 'confirmed_by_buyer', 'payout_released'];
+    const sales = await ServiceOrder.aggregate([
+      { $match: { service: { $in: serviceIds }, status: { $in: saleStatuses } } },
+      { $group: { _id: '$service', count: { $sum: 1 } } },
+    ]);
+    const saleCountMap = new Map(sales.map((item) => [String(item._id), item.count]));
+
+    let formatted = services.map((svc) => ({
+      ...svc.toObject(),
+      saleCount: saleCountMap.get(String(svc._id)) || 0,
+    }));
+
+    if (sortField === 'saleCount') {
+      formatted.sort((a, b) => (a.saleCount - b.saleCount) * sortOrder);
+    }
+
+    return res.json({ success: true, data: formatted, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
@@ -237,7 +339,7 @@ exports.listCategories = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
     const { ServiceCategory } = getModels(lang);
-    const categories = await ServiceCategory.find({}).sort({ order: 1, name: 1 });
+    const categories = await ServiceCategory.find({}).populate('parentCategory', 'name').sort({ order: 1, name: 1 });
     return res.json({ success: true, data: categories });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
@@ -252,11 +354,20 @@ exports.createCategory = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
     const { ServiceCategory } = getModels(lang);
-    const { name, description, iconUrl, order } = req.body;
+    const { name, description, iconUrl, order, group, parentCategory } = req.body;
 
     if (!name) return res.status(400).json({ success: false, message: 'Le nom est requis' });
+    if (group === 'Service' && !parentCategory) return res.status(400).json({ success: false, message: 'La catégorie de service est requise pour un type de service.' });
 
-    const category = await ServiceCategory.create({ name, description, iconUrl, order: order || 0, isActive: true });
+    const category = await ServiceCategory.create({
+      name,
+      description,
+      iconUrl,
+      group: group || 'Service',
+      parentCategory: group === 'Service' ? parentCategory : undefined,
+      order: order || 0,
+      isActive: true,
+    });
     return res.status(201).json({ success: true, data: category, message: 'Catégorie créée' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
@@ -272,7 +383,16 @@ exports.updateCategory = async (req, res) => {
     const lang = req.query.lang || 'fr';
     const { ServiceCategory } = getModels(lang);
 
-    const category = await ServiceCategory.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (req.body.group === 'Service' && !req.body.parentCategory) {
+      return res.status(400).json({ success: false, message: 'La catégorie de service est requise pour un type de service.' });
+    }
+
+    const body = { ...req.body };
+    if (req.body.group !== 'Service') {
+      body.parentCategory = undefined;
+    }
+
+    const category = await ServiceCategory.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true });
     if (!category) return res.status(404).json({ success: false, message: 'Catégorie introuvable' });
 
     return res.json({ success: true, data: category, message: 'Catégorie mise à jour' });
@@ -336,6 +456,7 @@ exports.listAllOrders = async (req, res) => {
       }
       if (q.match(/^[0-9a-fA-F]{24}$/)) {
         orFilters.push({ _id: q });
+        orFilters.push({ property_id: q });
       }
 
       filter.$or = orFilters;
@@ -349,11 +470,136 @@ exports.listAllOrders = async (req, res) => {
     const [orders, total] = await Promise.all([
       ServiceOrder.find(filter).sort({ [sortField]: sortOrder }).skip(skip).limit(Number(limit))
         .populate('buyer', 'name email')
-        .populate('service', 'title priceTTC'),
+        .populate('service', 'title priceTTC')
+        .populate('property_id', 'propertyTitle city zipcode address price surface area images'),
       ServiceOrder.countDocuments(filter),
     ]);
 
     return res.json({ success: true, data: orders, pagination: { page: Number(page), limit: Number(limit), total } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * GET /admin/marketplace/orders/:id
+ * Détail d'une commande
+ */
+function buildOrderDetailPayload(order) {
+  const buyerName = order.buyer ? (order.buyer.name || `${order.buyer.firstName || ''} ${order.buyer.lastName || ''}`.trim()) : null;
+  const serviceSnapshot = order.serviceSnapshot || {};
+  const proSnapshot = order.proSnapshot || {};
+  const buyerContact = {
+    id: order.buyer?._id ? String(order.buyer._id) : null,
+    name: buyerName || '—',
+    email: order.buyer?.email || null,
+    phone: order.buyer?.phone || null,
+  };
+  const proContact = {
+    id: proSnapshot._id ? String(proSnapshot._id) : null,
+    name: proSnapshot.name || '—',
+    email: proSnapshot.email || null,
+    phone: proSnapshot.phone || null,
+    role: proSnapshot.role || '—',
+    city: proSnapshot.city || '—',
+  };
+  const originator = order.litigationInitiatedBy === 'pro'
+    ? { type: 'pro', ...proContact }
+    : { type: 'buyer', ...buyerContact };
+  const counterparty = order.litigationInitiatedBy === 'pro'
+    ? { type: 'buyer', ...buyerContact }
+    : { type: 'pro', ...proContact };
+
+  const selectedProperty = order.property_id || null;
+  const propertyDetails = selectedProperty ? {
+    id: selectedProperty._id ? String(selectedProperty._id) : null,
+    title: selectedProperty.propertyTitle || selectedProperty.title || selectedProperty.name || '—',
+    city: selectedProperty.city || selectedProperty.zipcode || '—',
+    zipcode: selectedProperty.zipcode || null,
+    address: selectedProperty.address || null,
+    price: selectedProperty.price != null ? selectedProperty.price : null,
+    surface: selectedProperty.surface || selectedProperty.area || null,
+    imageUrls: Array.isArray(selectedProperty.images) ? selectedProperty.images : [],
+  } : null;
+
+  return {
+    id: String(order._id),
+    reference: String(order._id),
+    status: order.status,
+    totalPriceTTC: order.totalPriceTTC,
+    commissionHT: order.commissionHT,
+    quantity: order.quantity,
+    paidAt: order.paidAt,
+    deliveredAt: order.deliveredAt,
+    confirmedAt: order.confirmedAt,
+    createdAt: order.createdAt,
+    deliveryMessage: order.deliveryMessage,
+    attachments: order.attachments || [],
+    buyer: buyerContact,
+    pro: proContact,
+    property: propertyDetails,
+    propertyId: selectedProperty,
+    litigation: {
+      description: order.litigationDescription || null,
+      initiatedBy: order.litigationInitiatedBy || null,
+      openedAt: order.litigationOpenedAt || null,
+      originator,
+      counterparty,
+    },
+    serviceSnapshot,
+    service: {
+      id: order.serviceSnapshot?._id ? String(order.serviceSnapshot._id) : (order.service?._id ? String(order.service._id) : null),
+      title: serviceSnapshot.title || order.service?.title || '—',
+      priceTTC: serviceSnapshot.priceTTC != null ? serviceSnapshot.priceTTC : order.service?.priceTTC,
+      modality: serviceSnapshot.modality || order.service?.modality || '—',
+      city: serviceSnapshot.city || order.service?.city || '—',
+      category: serviceSnapshot.category?.name || (serviceSnapshot.category ? String(serviceSnapshot.category) : '—'),
+      status: serviceSnapshot.status || order.service?.status || '—',
+      radiusKm: serviceSnapshot.radiusKm != null ? serviceSnapshot.radiusKm : order.service?.radiusKm,
+      quantity: serviceSnapshot.quantity != null ? serviceSnapshot.quantity : order.service?.quantity,
+      deliveryTime: serviceSnapshot.delivery_time || serviceSnapshot.deliveryTime || '—',
+      description: serviceSnapshot.description || '—',
+      summary: serviceSnapshot.summary || '—',
+      imageUrls: Array.isArray(serviceSnapshot.imageUrls) ? serviceSnapshot.imageUrls : order.service?.imageUrls || [],
+    },
+  };
+}
+
+exports.getOrderDetail = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ServiceOrder } = getModels(lang);
+
+    const order = await ServiceOrder.findById(req.params.id)
+      .populate('buyer', 'name email firstName lastName phone')
+      .populate('service', 'title priceTTC modality city quantity delivery_time summary description')
+      .populate('property_id', 'propertyTitle title name city zipcode address price surface area images')
+      .lean();
+
+    if (!order) return res.status(404).json({ success: false, message: 'Commande introuvable' });
+
+    return res.json({ success: true, data: buildOrderDetailPayload(order) });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+exports.getLitigationDetail = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ServiceOrder } = getModels(lang);
+
+    const order = await ServiceOrder.findById(req.params.id)
+      .populate('buyer', 'name email firstName lastName phone')
+      .populate('service', 'title priceTTC modality city quantity delivery_time summary description')
+      .populate('property_id', 'propertyTitle title name city zipcode address price surface area images')
+      .lean();
+
+    if (!order || !order.litigationOpenedAt) {
+      return res.status(404).json({ success: false, message: 'Litige introuvable' });
+    }
+
+    return res.json({ success: true, data: buildOrderDetailPayload(order) });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

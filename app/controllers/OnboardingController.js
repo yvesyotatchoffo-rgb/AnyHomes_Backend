@@ -20,6 +20,76 @@ const SIGNUP_OBJECTIVE_MAP = {
   'Préparer une vente future': { profile: 'owner', objective: 'sell' },
 };
 
+const ONBOARDING_ACTIONS_BY_CONFIG = {
+  owner_sell: [
+    'put_property_for_sale',
+    'estimate_property_value',
+    'consult_transaction_history',
+    'get_targeted_help',
+    'learn_real_estate',
+    'build_seller_dossier',
+    'get_personalized_advice',
+    'peer_estimation',
+  ],
+  owner_rent: [
+    'put_property_for_rent',
+    'estimate_property_value',
+    'get_targeted_help',
+    'learn_real_estate',
+    'get_personalized_advice',
+    'peer_estimation',
+  ],
+  owner_increase_value: [
+    'publish_property_directory',
+    'estimate_property_value',
+    'learn_real_estate',
+    'get_personalized_advice',
+    'peer_estimation',
+  ],
+  buyer_active_buy: [
+    'compute_financial_score_buy',
+    'search_property_buy',
+    'get_targeted_help',
+    'learn_real_estate',
+    'build_buyer_dossier',
+    'get_personalized_advice',
+    'peer_estimation',
+    'find_professional',
+  ],
+  buyer_active_rent: [
+    'compute_financial_score_rent',
+    'search_property_rent',
+    'get_targeted_help',
+    'learn_real_estate',
+    'build_tenant_dossier',
+    'get_personalized_advice',
+    'peer_estimation',
+    'find_professional',
+  ],
+  buyer_passive: [
+    'compute_financial_score_passive',
+    'browse_property_directory',
+    'publish_property_directory',
+    'learn_real_estate',
+    'get_personalized_advice',
+    'peer_estimation',
+    'follow_property',
+    'contact_owner_agency',
+  ],
+};
+
+const getActionsForConfig = (profile, objective) => {
+  const key = `${profile}_${objective}`;
+  return ONBOARDING_ACTIONS_BY_CONFIG[key] || [];
+};
+
+const computeCompletionPercent = (profile, objective, completions = {}) => {
+  const actions = getActionsForConfig(profile, objective);
+  if (!actions.length) return 0;
+  const done = actions.filter((id) => completions[id] === 'done').length;
+  return Math.round((done / actions.length) * 100);
+};
+
 module.exports = {
   getState: async (req, res) => {
     try {
@@ -109,6 +179,7 @@ module.exports = {
         professional_searched:         ['find_professional'],
         property_followed:             ['follow_property'],
         owner_contacted:               ['contact_owner_agency'],
+        financial_score_calculated:    ['compute_financial_score_buy', 'compute_financial_score_rent', 'compute_financial_score_passive'],
       };
 
       const toComplete = EVENT_TO_ACTIONS[eventType] || [];
@@ -130,5 +201,126 @@ module.exports = {
       console.error('Onboarding.sendEvent', err);
       return res.status(500).json({ success: false, message: err.message });
     }
-  }
-};
+    },
+
+    getAdminList: async (req, res) => {
+      try {
+        let { search, sortBy, page = 1, count = 20 } = req.query;
+        const query = { isDeleted: false, role: 'user' };
+
+        if (search) {
+          query.$or = [
+            { fullName: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+            { city: { $regex: search, $options: 'i' } },
+            { state: { $regex: search, $options: 'i' } },
+            { country: { $regex: search, $options: 'i' } },
+          ];
+        }
+
+        let sortquery = { createdAt: -1 };
+        if (sortBy) {
+          const [field, order] = sortBy.split(' ');
+          sortquery = { [field || 'createdAt']: order === 'desc' ? -1 : 1 };
+        }
+
+        const pipeline = [
+          { $match: query },
+          {
+            $lookup: {
+              from: 'onboardings',
+              localField: '_id',
+              foreignField: 'userId',
+              as: 'onboarding',
+            },
+          },
+          {
+            $unwind: {
+              path: '$onboarding',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $project: {
+              id: '$_id',
+              email: '$email',
+              fullName: '$fullName',
+              city: '$city',
+              state: '$state',
+              country: '$country',
+              address: '$address',
+              role: '$role',
+              createdAt: '$createdAt',
+              updatedAt: '$updatedAt',
+              profile: {
+                $ifNull: ['$onboarding.profile', DEFAULT.profile],
+              },
+              objective: {
+                $ifNull: ['$onboarding.objective', DEFAULT.objective],
+              },
+              completions: {
+                $ifNull: ['$onboarding.completions', DEFAULT.completions],
+              },
+            },
+          },
+          { $sort: sortquery },
+        ];
+
+        const total = await db.users.countDocuments(query);
+        const skipNo = (Number(page) - 1) * Number(count);
+        pipeline.push({ $skip: skipNo }, { $limit: Number(count) });
+
+        const result = await db.users.aggregate(pipeline);
+        const data = result.map((item) => ({
+          ...item,
+          completionPercent: computeCompletionPercent(item.profile, item.objective, item.completions),
+        }));
+
+        return res.status(200).json({ success: true, data, total });
+      } catch (err) {
+        console.error('Onboarding.getAdminList', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }
+    },
+
+    getAdminDetail: async (req, res) => {
+      try {
+        const id = req.query.id;
+        if (!id) {
+          return res.status(400).json({ success: false, message: 'id required' });
+        }
+
+        const user = await db.users.findById(id).lean();
+        if (!user) {
+          return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        let onboarding = await Onboarding.findOne({ userId: id }).lean();
+        if (!onboarding) {
+          const mapped = user.signupObjective ? SIGNUP_OBJECTIVE_MAP[user.signupObjective] : null;
+          onboarding = mapped ? { profile: mapped.profile, objective: mapped.objective, completions: {} } : { ...DEFAULT };
+        }
+
+        const data = {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          city: user.city,
+          state: user.state,
+          country: user.country,
+          address: user.address,
+          role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+          profile: onboarding.profile || DEFAULT.profile,
+          objective: onboarding.objective || DEFAULT.objective,
+          completions: onboarding.completions || DEFAULT.completions,
+          completionPercent: computeCompletionPercent(onboarding.profile || DEFAULT.profile, onboarding.objective || DEFAULT.objective, onboarding.completions || DEFAULT.completions),
+        };
+
+        return res.status(200).json({ success: true, data });
+      } catch (err) {
+        console.error('Onboarding.getAdminDetail', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }      }
+    };

@@ -16,6 +16,77 @@ const normalizeScore = (value) => {
   return Math.round(Math.max(0, Math.min(100, score)));
 };
 
+const getScoreClass = (score) => {
+  const value = normalizeScore(score);
+  if (value >= 85) return "TRES_FORTE";
+  if (value >= 70) return "FORTE";
+  if (value >= 55) return "INTERMEDIAIRE";
+  if (value >= 40) return "FRAGILE";
+  return "FAIBLE";
+};
+
+const getScoreLabel = (score) => {
+  const value = normalizeScore(score);
+  if (value >= 85) return "Très forte crédibilité";
+  if (value >= 70) return "Forte crédibilité";
+  if (value >= 55) return "Crédibilité intermédiaire";
+  if (value >= 40) return "Crédibilité fragile";
+  return "Crédibilité faible";
+};
+
+const getGuestTopReasons = (score, type = "sale") => {
+  const value = normalizeScore(score);
+  if (type === "rent") {
+    if (value >= 85) {
+      return [
+        "Le loyer visé est très bien couvert par les revenus déclarés et le profil est bien structuré.",
+      ];
+    }
+    if (value >= 70) {
+      return [
+        "La situation financière est cohérente et le dossier inspire confiance pour une location.",
+      ];
+    }
+    if (value >= 55) {
+      return [
+        "Le dossier est acceptable mais certains éléments nécessitent une vérification plus poussée.",
+      ];
+    }
+    if (value >= 40) {
+      return [
+        "Le dossier présente des fragilités qui peuvent rendre la candidature moins compétitive.",
+      ];
+    }
+    return [
+      "Le dossier est insuffisant pour une décision favorable sans justificatifs complémentaires.",
+    ];
+  }
+
+  if (value >= 85) {
+    return [
+      "Les éléments financiers du dossier sont excellents et montrent un profil d’acquéreur très solide.",
+    ];
+  }
+  if (value >= 70) {
+    return [
+      "Le dossier est solide et cohérent, avec une bonne capacité de financement.",
+    ];
+  }
+  if (value >= 55) {
+    return [
+      "Le dossier est globalement correct mais pourrait gagner en solidité avec des pièces complémentaires.",
+    ];
+  }
+  if (value >= 40) {
+    return [
+      "Le dossier montre des faiblesses qui doivent être corrigées pour convaincre le vendeur.",
+    ];
+  }
+  return [
+    "Le dossier reste insuffisant pour ce niveau de projet sans justificatifs supplémentaires.",
+  ];
+};
+
 const computeFinancingProbability = (referenceScore, property) => {
   const score = normalizeScore(referenceScore);
   if (score === null) return 0;
@@ -51,6 +122,23 @@ const estimateScoreFromGrade = (grade) => {
     default:
       return 0;
   }
+};
+
+const hasBuyerSupportingDocuments = (buyer) => {
+  const buyerFiles = buyer?.buyerFiles;
+  if (!buyerFiles || typeof buyerFiles !== "object") return false;
+
+  const containers = [
+    "preAcceptance",
+    "salarySlips",
+    "bankStatement",
+    "taxNotice",
+    "personalContribution",
+  ];
+
+  return containers.some((container) =>
+    Array.isArray(buyerFiles[container]) && buyerFiles[container].length > 0
+  );
 };
 
 const buildGuestLeadUsers = (req) => {
@@ -409,6 +497,7 @@ const buildGuestInterestCards = (req) => {
 
   const saleCards = saleFunnelSteps.map((step, index) => {
     const buyer = guestBuyers[index];
+    const score = buyer?.financialChecks?.financingProbability ?? 50;
     return {
       _id: `guest-interest-sale-${index + 1}`,
       buyerId: buyer,
@@ -441,6 +530,17 @@ const buildGuestInterestCards = (req) => {
       userVisitDate: step.userVisitDate,
       ownerVisitDate: step.ownerVisitDate,
       finalVisitDate: step.finalVisitDate,
+      financingReferenceScore: score,
+      financingReferenceScoreSource: "auto",
+      financingProbability: score,
+      financialScore: score,
+      financialScoreSource: "auto",
+      scoreStatus: "OK",
+      scoreClass: getScoreClass(score),
+      scoreLabel: getScoreLabel(score),
+      scoreQuantitative: 0,
+      scoreQualitative: 0,
+      topReasons: getGuestTopReasons(score, "sale"),
       funnel: {
         youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         title: step.title,
@@ -450,8 +550,11 @@ const buildGuestInterestCards = (req) => {
     };
   });
 
+  const renterScoreSteps = [65, 72, 78, 83, 88, 76];
+
   const rentCards = rentFunnelSteps.map((step, index) => {
     const buyer = guestBuyers[14 + index];
+    const renterScore = renterScoreSteps[index] ?? 70;
     return {
       _id: `guest-interest-rent-${index + 1}`,
       buyerId: buyer,
@@ -471,6 +574,27 @@ const buildGuestInterestCards = (req) => {
       finalHomeInventorySlot: step.finalHomeInventorySlot,
       finalSignSlot: step.finalSignSlot,
       propertyTransferRequest: step.propertyTransferRequest,
+      financingReferenceScore: renterScore,
+      financingReferenceScoreSource: "auto",
+      financingProbability: renterScore,
+      financialScore: renterScore,
+      financialScoreSource: "auto",
+      scoreStatus: "OK",
+      scoreClass: getScoreClass(renterScore),
+      scoreLabel: getScoreLabel(renterScore),
+      scoreQuantitative: 0,
+      scoreQualitative: 0,
+      renterReferenceScore: renterScore,
+      renterReferenceScoreSource: "auto",
+      renterProbability: renterScore,
+      renterScore: renterScore,
+      renterScoreSource: "auto",
+      renterScoreStatus: "OK",
+      renterScoreClass: getScoreClass(renterScore),
+      renterScoreLabel: getScoreLabel(renterScore),
+      renterScoreQuantitative: 0,
+      renterScoreQualitative: 0,
+      renterTopReasons: getGuestTopReasons(renterScore, "rent"),
       funnel: {
         youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         title: step.title,
@@ -484,6 +608,7 @@ const buildGuestInterestCards = (req) => {
 };
 
 module.exports = {
+    buildGuestInterestCards,
 
     addInterest: async (req, res) => {
         try {
@@ -534,10 +659,10 @@ module.exports = {
                     message: "Property not found.",
                 });
             }
-            const scoringResult = await scoreService.computeFinancialScore({
-                declarativeBuyerFiles: findBuyer.declarativeBuyerFiles || {},
-                property,
-            });
+            const isRental = String(property.propertyType || "").toLowerCase() === "rent";
+            const scoringResult = isRental
+                ? await scoreService.computeRenterScore({ declarativeRenterFiles: findBuyer.declarativeRenterFiles || {}, property })
+                : await scoreService.computeFinancialScore({ declarativeBuyerFiles: findBuyer.declarativeBuyerFiles || {}, property });
             const referenceScore = scoringResult.score || 0;
             const financingProbability = referenceScore ? computeFinancingProbability(referenceScore, property) : 0;
             const maxLeadLimit = parseInt(property.maximumLead);
@@ -604,13 +729,23 @@ module.exports = {
                     financingReferenceScore: referenceScore,
                     financingReferenceScoreSource: "auto",
                     financingProbability,
+                    renterReferenceScore: referenceScore,
+                    renterReferenceScoreSource: "auto",
+                    renterProbability: financingProbability,
                     financialScore: scoringResult.score || 0,
                     financialScoreSource: "auto",
+                    renterScore: scoringResult.score || 0,
+                    renterScoreSource: "auto",
                     scoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
+                    renterScoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
                     scoreClass: scoringResult.score_class || "",
+                    renterScoreClass: scoringResult.score_class || "",
                     scoreLabel: scoringResult.score_label || "",
+                    renterScoreLabel: scoringResult.score_label || "",
                     scoreQuantitative: scoringResult.score_quantitatif || 0,
+                    renterScoreQuantitative: scoringResult.score_quantitatif || 0,
                     scoreQualitative: scoringResult.score_qualitatif || 0,
+                    renterScoreQualitative: scoringResult.score_qualitatif || 0,
                     ratioFinancabilite: scoringResult.ratio_financabilite || 0,
                     capitalFinancable: scoringResult.capital_empruntable || 0,
                     besoinFinancement: scoringResult.besoin_financement || 0,
@@ -621,6 +756,7 @@ module.exports = {
                     referencePricePostalCode: scoringResult.reference_price_postal_code || "",
                     surfaceUsedForReference: scoringResult.surface_used_for_reference || 0,
                     topReasons: scoringResult.top_reasons || [],
+                    renterTopReasons: scoringResult.top_reasons || [],
                 })
 
                 const updatePropertyInterestTime = await db.property.updateOne(
@@ -702,13 +838,23 @@ module.exports = {
                 financingReferenceScore: referenceScore,
                 financingReferenceScoreSource: "auto",
                 financingProbability,
+                renterReferenceScore: referenceScore,
+                renterReferenceScoreSource: "auto",
+                renterProbability: financingProbability,
                 financialScore: scoringResult.score || 0,
                 financialScoreSource: "auto",
+                renterScore: scoringResult.score || 0,
+                renterScoreSource: "auto",
                 scoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
+                renterScoreStatus: scoringResult.score_status || "INSUFFICIENT_PROPERTY_DATA",
                 scoreClass: scoringResult.score_class || "",
+                renterScoreClass: scoringResult.score_class || "",
                 scoreLabel: scoringResult.score_label || "",
+                renterScoreLabel: scoringResult.score_label || "",
                 scoreQuantitative: scoringResult.score_quantitatif || 0,
+                renterScoreQuantitative: scoringResult.score_quantitatif || 0,
                 scoreQualitative: scoringResult.score_qualitatif || 0,
+                renterScoreQualitative: scoringResult.score_qualitatif || 0,
                 ratioFinancabilite: scoringResult.ratio_financabilite || 0,
                 capitalFinancable: scoringResult.capital_empruntable || 0,
                 besoinFinancement: scoringResult.besoin_financement || 0,
@@ -719,6 +865,7 @@ module.exports = {
                 referencePricePostalCode: scoringResult.reference_price_postal_code || "",
                 surfaceUsedForReference: scoringResult.surface_used_for_reference || 0,
                 topReasons: scoringResult.top_reasons || [],
+                renterTopReasons: scoringResult.top_reasons || [],
             });
 
 
@@ -939,7 +1086,7 @@ module.exports = {
                     select: "propertyTitle address zipcode images name location price propertyType city state country visitSlots changeRequestNote surface rooms bedrooms bathrooms bathroom propertyMonthlyCharges homeInventorySlots signingSlots contractSigned propertyTransferRequest addedBy identityVerified",
                     match: propertyType ? { propertyType: propertyType } : {}
                 })
-                .populate("buyerId", "fullName firstName lastName email city country image createdAt buyerfileIdenityVerification renterfileIdenityVerification isDocumentVerified isDeclDocumentVerified documentGrade financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt")
+                .populate("buyerId", "fullName firstName lastName email city country image createdAt buyerfileIdenityVerification renterfileIdenityVerification isDocumentVerified isDeclDocumentVerified documentGrade financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt buyerFiles renterFiles declarativeRenterFiles")
                 .sort(sorting)
 
 
@@ -966,23 +1113,37 @@ module.exports = {
                         }
 
                         const interestObj = interest.toObject();
+                    const isRentalInterest = String(interestObj.propertyId?.propertyType || "").toLowerCase() === "rent";
                     const buyerScore = interestObj.financingReferenceScore > 0
                         ? interestObj.financingReferenceScore
                         : (interestObj.buyer?.financingReferenceScore > 0
                             ? interestObj.buyer.financingReferenceScore
                             : estimateScoreFromGrade(interestObj.buyer?.documentGrade));
+                    const rentalScore = interestObj.renterReferenceScore > 0
+                        ? interestObj.renterReferenceScore
+                        : interestObj.renterScore > 0
+                            ? interestObj.renterScore
+                            : null;
+                    const referenceScore = isRentalInterest
+                        ? (rentalScore ?? buyerScore)
+                        : buyerScore;
                     const responseFinancingProbability = interestObj.financingProbability > 0
                         ? interestObj.financingProbability
-                        : computeFinancingProbability(buyerScore, interestObj.propertyId);
-                    const responseFinancingReferenceScoreSource = interestObj.financingReferenceScoreSource
-                        || interestObj.buyer?.financingReferenceScoreSource
-                        || ((interestObj.buyer?.isDocumentVerified || interestObj.buyer?.isDeclDocumentVerified) ? "verified" : "auto");
+                        : computeFinancingProbability(referenceScore, interestObj.propertyId);
+                    const responseFinancingReferenceScoreSource = isRentalInterest
+                        ? (interestObj.renterReferenceScoreSource || interestObj.renterScoreSource || interestObj.financingReferenceScoreSource || ((interestObj.buyer?.isDocumentVerified || interestObj.buyer?.isDeclDocumentVerified) ? "verified" : "auto"))
+                        : (interestObj.financingReferenceScoreSource
+                            || interestObj.buyer?.financingReferenceScoreSource
+                            || ((interestObj.buyer?.isDocumentVerified || interestObj.buyer?.isDeclDocumentVerified) ? "verified" : "auto"));
+
+                    const buyerSupportingDocuments = hasBuyerSupportingDocuments(interestObj.buyer);
 
                     return {
                             ...interestObj,
                             property: interest.propertyId,
                             buyer: interest.buyerId,
-                            financingReferenceScore: interestObj.financingReferenceScore > 0 ? interestObj.financingReferenceScore : buyerScore,
+                            buyerSupportingDocuments,
+                            financingReferenceScore: referenceScore,
                             financingProbability: responseFinancingProbability,
                             financingReferenceScoreSource: responseFinancingReferenceScoreSource,
                             // youtubeUrl: youtubeUrl || null,

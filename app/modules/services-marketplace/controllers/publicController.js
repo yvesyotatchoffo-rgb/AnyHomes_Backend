@@ -8,9 +8,31 @@ const ServiceOrderFr = require('../models/ServiceOrder_fr.model');
 const ServiceReviewEn = require('../models/ServiceReview_en.model');
 const ServiceReviewFr = require('../models/ServiceReview_fr.model');
 const ServiceFavorite = require('../models/ServiceFavorite.model');
+const MarketplaceSettings = require('../models/MarketplaceSettings.model');
 const stripeService = require('../services/stripeMarketplaceService');
 const db = require('../../../models');
 const Users = db.users;
+
+async function getMarketplaceSettingsDoc() {
+  let settings = await MarketplaceSettings.findOne();
+  if (!settings) {
+    settings = await MarketplaceSettings.create({});
+  }
+  return settings;
+}
+
+function getPriceWithoutVat(totalTTC, vatPercent) {
+  return totalTTC / (1 + vatPercent / 100);
+}
+
+function getApplicationFeeCents(totalCents, commissionPercentHT, vatPercent) {
+  const totalPriceHTCents = Math.round(totalCents / (1 + vatPercent / 100));
+  return Math.round(totalPriceHTCents * (commissionPercentHT / 100));
+}
+
+function getMarketplaceSettingsFeeCents(totalCents, settings) {
+  return getApplicationFeeCents(totalCents, settings.commissionPercent ?? 25, settings.vatPercent ?? 20);
+}
 
 // Sélectionne le bon modèle selon la langue (défaut: fr)
 function getModels(lang) {
@@ -425,7 +447,9 @@ exports.createOrder = async (req, res) => {
 
     if (!buyerId) return res.status(401).json({ success: false, message: 'Authentification requise' });
 
-    const { serviceId, quantity } = req.body;
+    const serviceId = req.body.serviceId || req.body.service_id;
+    const propertyId = req.body.propertyId || req.body.property_id || null;
+    const { quantity } = req.body;
 
     const service = await ProService.findOne({ _id: serviceId, status: 'active' })
       .populate('pro', 'name email stripeConnectAccountId');
@@ -439,9 +463,16 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: `Quantité max disponible : ${service.quantity}` });
     }
 
+    const settings = await getMarketplaceSettingsDoc();
     const totalPriceTTC = service.priceTTC * quantity;
-    const COMMISSION_RATE = Number(process.env.MARKETPLACE_COMMISSION_RATE) || 0.10;
-    const commissionHT = Math.round(totalPriceTTC * COMMISSION_RATE * 100) / 100;
+    const vatPercent = settings.vatPercent ?? 20;
+    const commissionPercentHT = settings.commissionPercent ?? 25;
+    const totalPriceHT = Math.round((totalPriceTTC / (1 + vatPercent / 100)) * 100) / 100;
+    const vatAmount = Math.round((totalPriceTTC - totalPriceHT) * 100) / 100;
+    const commissionHT = Math.round((totalPriceHT * commissionPercentHT) / 100 * 100) / 100;
+    const platformAmount = Math.round((commissionHT + vatAmount) * 100) / 100;
+    const proAmount = Math.round((totalPriceHT - commissionHT) * 100) / 100;
+    const feeAmountCents = Math.round(platformAmount * 100);
 
     // ── Créer la commande en base (statut pending_payment) ──────────────────
     const order = await ServiceOrder.create({
@@ -449,9 +480,14 @@ exports.createOrder = async (req, res) => {
       proSnapshot: service.pro.toObject ? service.pro.toObject() : service.pro,
       buyer: buyerId,
       service: service._id,
+      property_id: propertyId,
       quantity,
       totalPriceTTC,
+      totalPriceHT,
+      vatAmount,
       commissionHT,
+      platformAmount,
+      proAmount,
       status: 'pending_payment',
     });
 
@@ -465,6 +501,7 @@ exports.createOrder = async (req, res) => {
           orderId: order._id,
           buyerEmail,
           serviceTitle: service.title,
+          feeAmountCents,
         });
 
         // Sauvegarder le paymentIntentId sur la commande
@@ -569,12 +606,14 @@ exports.createPaymentIntent = async (req, res) => {
       return res.status(400).json({ success: false, message: `La commande est déjà au statut : ${order.status}` });
     }
 
+    const feeAmountCents = Math.round((order.platformAmount ?? 0) * 100);
     const paymentIntent = await stripeService.createPaymentIntent({
       amountTTC: order.totalPriceTTC,
       stripeAccountId: order.serviceSnapshot.pro && order.serviceSnapshot.pro.stripeConnectAccountId,
       orderId: order._id,
       buyerEmail: req.identity.email,
       serviceTitle: order.serviceSnapshot.title,
+      feeAmountCents,
     });
 
     order.stripePaymentIntentId = paymentIntent.id;

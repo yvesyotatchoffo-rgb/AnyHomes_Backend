@@ -2,7 +2,12 @@
 var mongoose = require("mongoose");
 const db = require("../models");
 const Users = db.users;
+const Properties = db.property;
 const Devices = db.devices;
+const ProServiceEn = require("../modules/services-marketplace/models/ProService_en.model");
+const ProServiceFr = require("../modules/services-marketplace/models/ProService_fr.model");
+const FRONT_WEB_URL = process.env.FRONT_WEB_URL || "http://localhost:8089";
+const BACK_WEB_URL = process.env.BACK_WEB_URL || `http://localhost:${process.env.PORT || 6089}`;
 var bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const constants = require("../utls/constants");
@@ -61,6 +66,50 @@ const normalizeBoolean = (value) => {
   if (typeof value === 'string') return value.toLowerCase() === 'true';
   return false;
 };
+
+const getTopAgentLabel = (role) => {
+  if (role === "agency") return "Top Agency";
+  if (role === "agent") return "Top Agent";
+  if (role === "hunter") return "Top Hunter";
+  return "Top Pro";
+};
+
+const getPhotoUrl = (photo) => {
+  if (!photo) return null;
+  if (typeof photo === "string") return photo;
+  if (photo.url) return photo.url;
+  if (photo.imageUrl) return photo.imageUrl;
+  if (photo.fileName) return `${BACK_WEB_URL}/uploads/${photo.fileName}`;
+  if (photo.originalname) return `${BACK_WEB_URL}/uploads/${photo.originalname}`;
+  if (photo.path) return `${BACK_WEB_URL}/${photo.path.replace(/^\//, "")}`;
+  return null;
+};
+
+const getPropertyThumbnailUrl = (images) => {
+  if (!images || !Array.isArray(images) || images.length === 0) return null;
+  return getPhotoUrl(images[0]);
+};
+
+const getPublicPropertyUrl = (propertyId) => `${FRONT_WEB_URL}/property-details?id=${propertyId}`;
+
+const PROPERTY_TYPE_LABELS = {
+  sale: "À vendre",
+  rent: "À louer",
+  directory: "Annuaire",
+};
+
+const mapPropertyForAdminDetail = (property) => ({
+  id: property._id,
+  title: property.propertyTitle || property.name || "Sans titre",
+  propertyType: property.propertyType || "sale",
+  typeLabel: PROPERTY_TYPE_LABELS[property.propertyType] || PROPERTY_TYPE_LABELS.sale,
+  city: property.city || null,
+  zipcode: property.zipcode || null,
+  price: property.price || null,
+  status: property.status || null,
+  thumbnailUrl: getPropertyThumbnailUrl(property.images),
+  publicUrl: getPublicPropertyUrl(property._id),
+});
 
 module.exports = {
   adminLogin: async (req, res) => {
@@ -943,6 +992,7 @@ module.exports = {
         }
 
         let scoreResult;
+        let renterScoreResult;
         if (data.declarativeBuyerFiles) {
           scoreResult = await scoreService.computeFinancialScore({
             declarativeBuyerFiles: data.declarativeBuyerFiles,
@@ -952,12 +1002,21 @@ module.exports = {
           data.financingReferenceScoreUpdatedAt = new Date();
         }
 
+        if (data.declarativeRenterFiles) {
+          renterScoreResult = await scoreService.computeRenterScore({
+            declarativeRenterFiles: data.declarativeRenterFiles,
+          });
+          data.renterFinancingReferenceScore = renterScoreResult.score || 0;
+          data.renterFinancingReferenceScoreSource = "auto";
+          data.renterFinancingReferenceScoreUpdatedAt = new Date();
+        }
+
         await Users.updateOne({ _id: userData._id }, data);
         return res.status(200).json({
           success: true,
           code: 200,
           message: constants.onBoarding.PROFILE_UPDATED,
-          scoringResult: scoreResult || null,
+          scoringResult: scoreResult || renterScoreResult || null,
         });
       } else {
         return res.status(400).json({
@@ -1180,6 +1239,14 @@ module.exports = {
             message: "Only pro users can be marked as favorites or top agents.",
           },
         });
+      }
+
+      if ((requestedGlobalFav || requestedLocalFav || requestedTopAgent) && !user.partnerAssignedAt) {
+        req.body.partnerAssignedAt = new Date();
+      }
+
+      if ((requestedGlobalFav || requestedLocalFav || requestedTopAgent) && !user.partnerAssignedAt) {
+        req.body.partnerAssignedAt = new Date();
       }
 
       if (requestedLocalFav) {
@@ -1460,10 +1527,37 @@ module.exports = {
         _id: id,
       });
       if (getAdminDetail) {
+        const properties = await Properties.find({
+          addedBy: id,
+          isDeleted: false,
+        })
+          .select("propertyTitle name propertyType city zipcode price images status")
+          .lean();
+
+        const propertiesByStatus = {
+          sale: [],
+          rent: [],
+          directory: [],
+        };
+
+        properties.forEach((property) => {
+          const normalizedType = property.propertyType || "sale";
+          const bucket = propertiesByStatus[normalizedType] || propertiesByStatus.sale;
+          bucket.push(mapPropertyForAdminDetail(property));
+        });
+
+        const payload = getAdminDetail.toObject ? getAdminDetail.toObject() : getAdminDetail;
+        payload.partnerProperties = propertiesByStatus;
+        payload.partnerPropertyCounts = {
+          sale: propertiesByStatus.sale.length,
+          rent: propertiesByStatus.rent.length,
+          directory: propertiesByStatus.directory.length,
+        };
+
         return res.status(200).json({
           success: true,
           message: constants.onBoarding.DATA_RETRIVED_SUCCESSFULLY,
-          payload: getAdminDetail,
+          payload,
         });
       } else {
         return res.status(404).json({
@@ -1792,6 +1886,129 @@ module.exports = {
         success: false,
         error: {
           code: 400,
+          message: "" + err,
+        },
+      });
+    }
+  },
+  getPartnerPros: async (req, res) => {
+    try {
+      let {
+        search,
+        partnerType,
+        sortBy,
+        order,
+        page,
+        count,
+        status,
+        city,
+        postalCode,
+      } = req.query;
+
+      const query = {
+        accountType: "pro",
+        isDeleted: false,
+      };
+
+      const orFilters = [];
+      if (search) {
+        const searchRegex = new RegExp(search, "i");
+        orFilters.push({ fullName: { $regex: searchRegex } });
+        orFilters.push({ email: { $regex: searchRegex } });
+        orFilters.push({ city: { $regex: searchRegex } });
+        orFilters.push({ pinCode: { $regex: searchRegex } });
+        orFilters.push({ localFavoritePostalCodes: { $regex: searchRegex } });
+      }
+
+      if (postalCode) {
+        const postalRegex = new RegExp(postalCode, "i");
+        orFilters.push({ pinCode: { $regex: postalRegex } });
+        orFilters.push({ localFavoritePostalCodes: postalCode });
+      }
+
+      if (orFilters.length > 0) {
+        query.$or = orFilters;
+      }
+
+      if (status) {
+        query.status = status;
+      }
+      if (city) {
+        query.city = city;
+      }
+      if (partnerType === "global") {
+        query.isGlobalFavorite = true;
+      } else if (partnerType === "local") {
+        query.isLocalFavorite = true;
+      } else if (partnerType === "top") {
+        query.isTopAgent = true;
+      }
+
+      const proIds = await Users.find(query).select("_id").lean();
+      if (!proIds.length) {
+        return res.status(200).json({ success: true, data: [], total: 0 });
+      }
+
+      const proObjectIds = proIds.map((pro) => pro._id);
+      const [frCounts, enCounts] = await Promise.all([
+        ProServiceFr.aggregate([
+          { $match: { pro: { $in: proObjectIds }, status: { $ne: "deleted" } } },
+          { $group: { _id: "$pro", count: { $sum: 1 } } },
+        ]),
+        ProServiceEn.aggregate([
+          { $match: { pro: { $in: proObjectIds }, status: { $ne: "deleted" } } },
+          { $group: { _id: "$pro", count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      const serviceCountMap = {};
+      frCounts.forEach((item) => {
+        const key = item._id.toString();
+        serviceCountMap[key] = (serviceCountMap[key] || 0) + item.count;
+      });
+      enCounts.forEach((item) => {
+        const key = item._id.toString();
+        serviceCountMap[key] = (serviceCountMap[key] || 0) + item.count;
+      });
+
+      const partnerIds = Object.keys(serviceCountMap).map((id) =>
+        mongoose.Types.ObjectId(id)
+      );
+
+      if (!partnerIds.length) {
+        return res.status(200).json({ success: true, data: [], total: 0 });
+      }
+
+      query._id = { $in: partnerIds };
+      const sortOrder = order === "asc" ? 1 : -1;
+      const allowedSortFields = ["createdAt", "fullName", "email", "city"];
+      const sortField = allowedSortFields.includes(sortBy) ? sortBy : "createdAt";
+      const sortquery = { [sortField]: sortOrder };
+
+      const total = await Users.countDocuments(query);
+      const skip = page && count ? (Number(page) - 1) * Number(count) : 0;
+      const partners = await Users.find(query)
+        .sort(sortquery)
+        .skip(skip)
+        .limit(Number(count || 10))
+        .lean();
+
+      const result = partners.map((partner) => ({
+        ...partner,
+        serviceCount: serviceCountMap[partner._id.toString()] || 0,
+        topLabel: partner.isTopAgent ? getTopAgentLabel(partner.role) : null,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+        total,
+      });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 500,
           message: "" + err,
         },
       });

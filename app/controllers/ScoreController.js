@@ -85,16 +85,20 @@ const listUserScores = async (req, res) => {
     const search = (req.query.search || "").trim();
 
     const query = { isDeleted: false };
+    if (req.query.renter === "true" || req.query.renterOnly === "true" || req.query.type === "renter") {
+      query.renterFinancingReferenceScoreUpdatedAt = { $exists: true };
+    }
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
         { financingReferenceScoreSource: { $regex: search, $options: "i" } },
+        { renterFinancingReferenceScoreSource: { $regex: search, $options: "i" } },
       ];
     }
 
     const users = await db.users.find(query)
-      .select("fullName email financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt declarativeBuyerFiles buyerFilesCount isDocumentVerified isDeclDocumentVerified createdAt")
+      .select("fullName email financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt renterFinancingReferenceScore renterFinancingReferenceScoreSource renterFinancingReferenceScoreUpdatedAt declarativeBuyerFiles buyerFilesCount isDocumentVerified isDeclDocumentVerified createdAt")
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -117,7 +121,7 @@ const getUserScoreDetail = async (req, res) => {
     const { id } = req.params;
     const user = await db.users.findOne({ _id: id, isDeleted: false })
       .select(
-        "fullName email financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt declarativeBuyerFiles buyerFilesCount isDocumentVerified isDeclDocumentVerified createdAt"
+        "fullName email financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt renterFinancingReferenceScore renterFinancingReferenceScoreSource renterFinancingReferenceScoreUpdatedAt declarativeBuyerFiles declarativeRenterFiles buyerFilesCount isDocumentVerified isDeclDocumentVerified createdAt"
       )
       .lean();
 
@@ -145,12 +149,20 @@ const listInterestScores = async (req, res) => {
     const search = (req.query.search || "").trim();
 
     const query = { isDeleted: false };
+    if (req.query.propertyType) {
+      query.propertyType = req.query.propertyType;
+    }
+    if (req.query.rental === "true" || req.query.tenant === "true" || req.query.isRental === "true") {
+      query.propertyType = "rent";
+    }
     if (search) {
       query.$or = [
         { interestType: { $regex: search, $options: "i" } },
         { scoreClass: { $regex: search, $options: "i" } },
         { scoreLabel: { $regex: search, $options: "i" } },
         { scoreStatus: { $regex: search, $options: "i" } },
+        { renterScoreLabel: { $regex: search, $options: "i" } },
+        { renterScoreStatus: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -178,7 +190,7 @@ const getInterestScoreDetail = async (req, res) => {
 
     const { id } = req.params;
     const interest = await db.interests.findOne({ _id: id, isDeleted: false })
-      .populate("buyerId", "fullName email declarativeBuyerFiles isDocumentVerified isDeclDocumentVerified financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt createdAt")
+      .populate("buyerId", "fullName email declarativeBuyerFiles declarativeRenterFiles isDocumentVerified isDeclDocumentVerified financingReferenceScore financingReferenceScoreSource financingReferenceScoreUpdatedAt createdAt")
       .populate("propertyId", "propertyTitle city zipcode price offMarket chooseDocumentMinProbability chooseDocumentGrade")
       .lean();
 
