@@ -29,6 +29,8 @@ router.delete('/categories/:id', ctrl.deleteCategory);
 // Commandes
 router.get('/orders', validatePagination, ctrl.listAllOrders);
 router.get('/orders/:id', ctrl.getOrderDetail);
+router.get('/users/:userId/orders', ctrl.listUserOrders);
+router.get('/users/:userId/favorites', ctrl.listUserFavorites);
 router.get('/orders/export', ctrl.exportOrdersCsv);
 router.get('/litigations', validatePagination, ctrl.listAllLitigations);
 router.get('/litigations/:id', ctrl.getLitigationDetail);

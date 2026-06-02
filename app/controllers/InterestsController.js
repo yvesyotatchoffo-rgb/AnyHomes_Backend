@@ -2,6 +2,7 @@ const db = require("../models");
 const Emails = require("../Emails/onBoarding");
 const visitInvite = require("../Emails/visitInvite");
 const scoreService = require("../services/financialScore.service");
+const logActivity = require("../services/activityLog.service");
 
 const buildGuestProspectImage = (req, filename) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
@@ -878,7 +879,7 @@ module.exports = {
             );
 
             let saveNewInterest = await newInterest.save();
-
+            logActivity(buyerId, "offer_sent", { label: `Intérêt envoyé pour ${property.propertyTitle || "un bien"}`, objectType: "property", objectId: propertyId, objectTitle: property.propertyTitle || "" });
             let createNotification = await db.notifications.create({
                 sendTo: property.addedBy,
                 sendBy: buyerId,

@@ -230,7 +230,7 @@ async function takeScreenshot(html, outputPath, format) {
 
 exports.listOwnerProperties = async (req, res) => {
   try {
-    const userId = req.identity && req.identity._id;
+    const userId = req.query.userId || (req.identity && req.identity._id);
     const { search, page = 1, limit = 30 } = req.query;
     const query = {
       addedBy: userId,
@@ -314,7 +314,7 @@ async function findLatestFlyerByProperty(propertyId, ownerId) {
 
 exports.listFlyers = async (req, res) => {
   try {
-    const userId = req.identity && req.identity._id;
+    const userId = req.query.userId || (req.identity && req.identity._id);
     const { propertyId, page = 1, limit = 30 } = req.query;
     const query = { ownerId: userId, isDeleted: false };
 

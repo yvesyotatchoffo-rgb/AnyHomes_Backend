@@ -4,6 +4,7 @@ const agenda = require('../config/agenda.config');
 const { handleServerError } = require("../utls/helper");
 const stripe = require("stripe")(process.env.STRIPE_KEY);
 const { Parser } = require('json2csv');
+const logActivity = require("../services/activityLog.service");
 
 
 
@@ -141,6 +142,8 @@ module.exports = {
       await agenda.schedule(endDate, "expire-active-campaign", {
         campaginId: startCampaign._id
       });
+
+      logActivity(userId, "campaign_launch", { label: `Campagne P2P lancée pour ${findProperty.propertyTitle || ""}`, objectType: "campaign", objectId: startCampaign._id, objectTitle: findProperty.propertyTitle || "" });
 
       return res.status(201).json({
         success: true,

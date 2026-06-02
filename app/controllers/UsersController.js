@@ -14,6 +14,7 @@ const constants = require("../utls/constants");
 const Emails = require("../Emails/onBoarding");
 const helper = require("../utls/helper");
 const scoreService = require("../services/financialScore.service");
+const logActivity = require("../services/activityLog.service");
 
 function generateOTP() {
   let digits = "0123456789";
@@ -433,6 +434,7 @@ module.exports = {
             LogoutTime: null,
             status: "active"
           })
+          logActivity(user._id, "login", { label: "Connexion", objectType: "user", metadata: { ip: data.ipAddress, deviceId: data.deviceId } });
           return res.status(200).json({
             success: true,
             message: constants.onBoarding.LOGIN_SUCCESS,
@@ -1012,6 +1014,13 @@ module.exports = {
         }
 
         await Users.updateOne({ _id: userData._id }, data);
+        // Activity log
+        const activityType = data.declarativeBuyerFiles
+          ? "questionnaire_buyer"
+          : data.declarativeRenterFiles
+          ? "questionnaire_renter"
+          : "profile_update";
+        logActivity(userData._id, activityType, { label: activityType === "profile_update" ? "Mise à jour du profil" : "Réponse au questionnaire", objectType: "user" });
         return res.status(200).json({
           success: true,
           code: 200,
@@ -2043,6 +2052,7 @@ module.exports = {
           fullName: user.fullName,
         };
         await Emails.changePasswordConfirmation(emailpayload);
+        logActivity(user._id, "password_change", { label: "Changement de mot de passe", objectType: "user" });
         return res.status(200).json({
           success: true,
           message: constants.onBoarding.PASSWORD_CHANGED,
@@ -4487,5 +4497,31 @@ module.exports = {
         message: err.message || "Internal server error",
       });
     }
-  }
+  },
+
+  listUserActivity: async (req, res) => {
+    try {
+      const { userId } = req.query;
+      if (!userId) {
+        return res.status(400).json({ success: false, message: "userId is required" });
+      }
+      const limit = parseInt(req.query.limit) || 100;
+      const page = parseInt(req.query.page) || 1;
+      const skip = (page - 1) * limit;
+
+      const [logs, total] = await Promise.all([
+        db.activityLog
+          .find({ userId })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        db.activityLog.countDocuments({ userId }),
+      ]);
+
+      return res.status(200).json({ success: true, data: logs, total, page, limit });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message || "Internal server error" });
+    }
+  },
 };

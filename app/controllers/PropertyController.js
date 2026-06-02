@@ -15,6 +15,8 @@ const Emails = require("../Emails/onBoarding");
 const { handleServerError } = require("../utls/helper");
 const { STATUS } = require("../utls/enums");
 const scoreService = require("../services/financialScore.service");
+const logActivity = require("../services/activityLog.service");
+const logPropertyActivity = require("../services/propertyActivityLog.service");
 const upload = multer({
   dest: "uploads/", // Destination folder
   limits: {
@@ -363,6 +365,8 @@ module.exports = {
         type: "propertyCreated",
       })
 
+      logActivity(req.identity.id, "property_create", { label: "Bien publié", objectType: "property", objectId: property._id, objectTitle: data.propertyTitle || "" });
+
       return res.status(200).json({
         success: true,
         data: property,
@@ -446,8 +450,6 @@ module.exports = {
         .populate("leisure")
         .populate("cooking")
         .populate("categories")
-        .populate("like") // Populate users who liked the property
-        .populate("follow") // Populate users who follow the property
         .populate("agency")
         .populate("addedBy")
         .populate("propertyState")
@@ -471,6 +473,7 @@ module.exports = {
           { _id: id },
           { $inc: { propertyViewerCount: 1 } }
         );
+        logPropertyActivity(id, "profile_view", { userId, label: "Consultation du profil du bien" });
       }
       let totalProperty = await Property.countDocuments({
         isDeleted: false
@@ -976,22 +979,7 @@ module.exports = {
           },
         },
 
-        {
-          $lookup: {
-            from: "users",
-            localField: "like",
-            foreignField: "_id",
-            as: "likedUsers",
-          },
-        },
-        {
-          $lookup: {
-            from: "users",
-            localField: "follow",
-            foreignField: "_id",
-            as: "followUsers",
-          },
-        },
+        // Removed heavy lookups for likedUsers and followUsers to improve listing performance
 
         {
           $lookup: {
@@ -1669,6 +1657,44 @@ module.exports = {
       let sorting = {
         $sort: sortquery,
       };
+      // Fast-path: if no heavy filters are present, use a lightweight find() with projection
+      const heavyFiltersPresent = Boolean(
+        amenities || address || situation || investment || loggedInUser || schoolId || schoolType || schoolStatus || schoolName || add_more_step
+      );
+
+      if (!dynamicRentFiltering && !heavyFiltersPresent) {
+        // Lightweight query: only return essential fields for the listing table
+        const projection = {
+          propertyTitle: 1,
+          address: 1,
+          city: 1,
+          zipcode: 1,
+          price: 1,
+          loyer: 1,
+          status: 1,
+          images: { $slice: 1 },
+          createdAt: 1,
+          addedBy: 1,
+          propertyType: 1,
+        };
+
+        const total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
+        const skipNo = (pageNumber - 1) * pageSize;
+        const docs = await Property.find({ ...query, ...financingProbabilityMatch })
+          .select(projection)
+          .sort(sortquery)
+          .skip(skipNo)
+          .limit(Number(pageSize))
+          .lean();
+
+        return res.status(200).json({
+          success: true,
+          message: constants.PROPERTY.RETRIEVED,
+          total,
+          data: docs,
+        });
+      }
+
       pipeline.push(group_stage);
       pipeline.push(sorting);
 
@@ -2916,10 +2942,8 @@ module.exports = {
           message: "Failed to update property.",
         });
       }
-      const updatedProperty = await Property.findOne({
-        _id: propertyId
-      });
-
+      const updatedProperty = await Property.findOne({ _id: propertyId });
+      logActivity(req.identity.id, "property_update", { label: "Bien modifié", objectType: "property", objectId: propertyId, objectTitle: updatedProperty.propertyTitle || "" });
       return res.status(200).json({
         success: true,
         data: updatedProperty,
@@ -3522,6 +3546,8 @@ module.exports = {
       } else {
         property.like.addToSet(userId);
         await property.save();
+        logActivity(userId, "property_like", { label: "Bien ajouté aux favoris", objectType: "property", objectId: propertyId, objectTitle: property.propertyTitle || "" });
+        logPropertyActivity(propertyId, "like", { userId, label: `Like par un utilisateur` });
         return res.status(200).json({
           success: true,
           message: constants.PROPERTY.LIKED,
@@ -3574,6 +3600,8 @@ module.exports = {
       } else {
         property.follow.addToSet(data.userId);
         await property.save();
+        logActivity(data.userId, "property_follow", { label: "Bien suivi", objectType: "property", objectId: data.propertyId, objectTitle: property.propertyTitle || "" });
+        logPropertyActivity(data.propertyId, "follow", { userId: data.userId, label: "Follow par un utilisateur" });
         return res.status(200).json({
           success: true,
           message: constants.PROPERTY.FOLLOW,

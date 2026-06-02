@@ -5,6 +5,71 @@ const fcm_service = require("../services/FcmServices");
 const Favorites = db.favorites;
 
 module.exports = {
+  listFollowedProperties: async (req, res) => {
+    try {
+      const userId = req.query.userId || req.identity?.id;
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'userId required',
+        });
+      }
+
+      const query = {
+        isDeleted: false,
+        user_id: userId,
+        follow_unfollow: true,
+      };
+
+      const [records, total] = await Promise.all([
+        db.followUnfollow
+          .find(query)
+          .sort({ createdAt: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .populate({
+            path: 'property_id',
+            select: 'propertyTitle address city zipcode propertyType images price propertyMonthlyCharges addedBy',
+            populate: {
+              path: 'addedBy',
+              select: 'fullName firstName lastName email',
+            },
+          })
+          .populate('campaignId', 'campaignName status startDate endDate')
+          .lean(),
+        db.followUnfollow.countDocuments(query),
+      ]);
+
+      const data = records.map((item) => ({
+        id: item._id,
+        followUnfollowId: item._id,
+        property: item.property_id || null,
+        campaign: item.campaignId || null,
+        p2pFollow: item.p2pFollow,
+        followUnfollow: item.follow_unfollow,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }));
+
+      return res.status(200).json({
+        success: true,
+        data,
+        pagination: { page, limit, total },
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 500,
+          message: '' + error,
+        },
+      });
+    }
+  },
+
   addfollowUnfollow: async (req, res) => {
     try {
       let data = req.body;

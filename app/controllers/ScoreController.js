@@ -155,6 +155,9 @@ const listInterestScores = async (req, res) => {
     if (req.query.rental === "true" || req.query.tenant === "true" || req.query.isRental === "true") {
       query.propertyType = "rent";
     }
+    if (req.query.buyerId && mongoose.Types.ObjectId.isValid(String(req.query.buyerId))) {
+      query.buyerId = toObjectId(req.query.buyerId);
+    }
     if (search) {
       query.$or = [
         { interestType: { $regex: search, $options: "i" } },

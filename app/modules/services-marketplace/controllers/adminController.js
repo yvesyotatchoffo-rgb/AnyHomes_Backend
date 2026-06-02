@@ -6,6 +6,7 @@ const ServiceOrderEn = require('../models/ServiceOrder_en.model');
 const ServiceOrderFr = require('../models/ServiceOrder_fr.model');
 const ServiceReviewEn = require('../models/ServiceReview_en.model');
 const ServiceReviewFr = require('../models/ServiceReview_fr.model');
+const ServiceFavorite = require('../models/ServiceFavorite.model');
 const FeaturedProAssignment = require('../models/FeaturedProAssignment.model');
 const MarketplaceSettings = require('../models/MarketplaceSettings.model');
 const stripeService = require('../services/stripeMarketplaceService');
@@ -476,6 +477,98 @@ exports.listAllOrders = async (req, res) => {
     ]);
 
     return res.json({ success: true, data: orders, pagination: { page: Number(page), limit: Number(limit), total } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * GET /admin/marketplace/users/:userId/orders
+ * Liste les commandes marketplace d'un utilisateur donné.
+ */
+exports.listUserOrders = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ServiceOrder } = getModels(lang);
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId required' });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const filter = { buyer: userId };
+
+    const [orders, total] = await Promise.all([
+      ServiceOrder.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('service', 'title priceTTC imageUrls status')
+        .populate('property_id', 'propertyTitle city zipcode address propertyType images'),
+      ServiceOrder.countDocuments(filter),
+    ]);
+
+    return res.json({
+      success: true,
+      data: orders,
+      pagination: { page, limit, total },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * GET /admin/marketplace/users/:userId/favorites
+ * Liste les services marketplace sauvegardés d'un utilisateur donné.
+ */
+exports.listUserFavorites = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService } = getModels(lang);
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId required' });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const filter = { user: userId };
+
+    const [favoriteDocs, total] = await Promise.all([
+      ServiceFavorite.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      ServiceFavorite.countDocuments(filter),
+    ]);
+
+    const serviceIds = favoriteDocs.map((favorite) => favorite.service).filter(Boolean);
+    const services = serviceIds.length
+      ? await ProService.find({ _id: { $in: serviceIds } })
+        .populate('category', 'name iconUrl name_fr')
+        .populate('pro', 'name avatar email city')
+      : [];
+
+    const servicesById = services.reduce((acc, service) => {
+      acc[String(service._id)] = service;
+      return acc;
+    }, {});
+
+    const data = favoriteDocs.map((favorite) => ({
+      ...favorite,
+      service: servicesById[String(favorite.service)] || null,
+    }));
+
+    return res.json({
+      success: true,
+      data,
+      pagination: { page, limit, total },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

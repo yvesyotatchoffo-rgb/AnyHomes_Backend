@@ -10,6 +10,7 @@ const { query } = require("express");
 const recentLogs = db.recentLogs;
 const saveSearch = db.savesearch;
 const Property = db.property;
+const logActivity = require("../services/activityLog.service");
 
 module.exports = {
     addSaveSearch: async (req, res) => {
@@ -78,6 +79,7 @@ module.exports = {
                         searchLocationCount: 1,
                         zipcodeCount: 1,
                     });
+                    logActivity(searchBy, "search_saved", { label: `Recherche sauvegardée — ${LowerCaseSearchLocation || zip}`, objectType: "search", metadata: { location: LowerCaseSearchLocation, zipcode: zip, propertyType: validatedPropertyType } });
                 } else {
                     existingEntry.searchByCount += 1;
                     existingEntry.propertyTypeCount += 1;

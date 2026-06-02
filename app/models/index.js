@@ -74,5 +74,7 @@ db.scoreParameters = require("./scoreParameters.model.js")(mongoose)
 db.supports = require("./support.model.js")(mongoose)
 db.claimOwnerships = require("./claimOwnerships.model.js")(mongoose)
 db.dashboardPreferences = require("./dashboardPreferences.model.js")(mongoose)
+db.activityLog = require("./activityLog.model.js")(mongoose)
+db.propertyActivityLog = require("./propertyActivityLog.model.js")(mongoose)
 
 module.exports = db;

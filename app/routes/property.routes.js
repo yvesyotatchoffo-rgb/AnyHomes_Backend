@@ -1,7 +1,10 @@
 var property = require("../controllers/PropertyController");
+var adminProperty = require("../controllers/AdminPropertyController");
 const { adminAuth } = require("../middleware/adminAuth");
 var router = require("express").Router();
 
+router.get("/admin/detail/:id", adminAuth, adminProperty.adminDetail);
+router.get("/admin/activity/:id", adminAuth, adminProperty.adminActivity);
 router.post("/add", property.add);
 router.get("/detail", property.details);
 router.get("/listing", property.listing);

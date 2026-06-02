@@ -1,4 +1,5 @@
 var user = require("../controllers/UsersController");
+var adminCompany = require("../controllers/AdminCompanyController");
 
 var router = require("express").Router();
 
@@ -265,6 +266,7 @@ router.post("/verify-otp", user.verifyOtp);
 router.post("/add-by-admin/lisitng", user.getAdminUsers);
 
 router.get("/admin/lisitng", user.getAdminUsers);
+router.get("/admin/activity", user.listUserActivity);
 router.get("/pro/listing", user.getAllProUsers);
 
 
@@ -316,5 +318,8 @@ router.get("/admin/documents", user.getAllUserDocuments);
 router.post("/admin/rateUser", user.rateUserAndVerify);
 
 router.delete("/delete-by-credentials", user.deleteUserByEmailPassword);
+
+// Admin Company detail (profil complet d'un pro/eventOrganizer)
+router.get("/admin/company-detail/:id", adminCompany.companyAdminDetail);
 
 module.exports = router;
