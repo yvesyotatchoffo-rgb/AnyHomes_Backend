@@ -698,21 +698,13 @@ module.exports = {
                     propertyInventory: { $first: "$propertyInventory" },
                 },
             };
-            // let sorting = {
-            //     $sort: sortquery,
-            // };
-            pipeline.push(group_stage);
-            // pipeline.push(sorting);
-            const total = await db.property.aggregate([...pipeline]);
-            const totalcount  = total.length;
-
             const user_id = req.identity.id;
             const sortBy = req.query.sortBy || "createdAt"; 
             const sortOrder = req.query.sortOrder === "desc" ? -1 : 1;
             const alerts = await Alerts.find({ user_id: user_id, isDeleted: false }).sort({ [sortBy]: sortOrder });
             let totalAlerts = alerts.length;
             const alertsWithTotalCount = alerts.map(alert => {
-                return { ...alert._doc, totalcount: totalcount };
+                return { ...alert._doc, totalcount: alert._doc.totalcount || 0 };
             });
             return res.status(200).json({
                 success: true,
