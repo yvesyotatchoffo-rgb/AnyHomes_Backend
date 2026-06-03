@@ -230,6 +230,12 @@ module.exports = (mongoose) => {
     });
     schema.index({ newlocation: "2dsphere" });
     // schema.index({ randomLocation: "2dsphere" });  //for random location key
+
+    // Performance indexes—évitent les full collection scans sur listing
+    schema.index({ isDeleted: 1, status: 1, createdAt: -1 });
+    schema.index({ isDeleted: 1, status: 1, addedBy: 1 });
+    schema.index({ isDeleted: 1, status: 1, propertyType: 1, createdAt: -1 });
+
     const property = mongoose.model("properties", schema);
     return property;
 };

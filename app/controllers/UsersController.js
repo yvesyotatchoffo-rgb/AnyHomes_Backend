@@ -2279,23 +2279,13 @@ module.exports = {
       if (userData) {
         if (req.body.type == "login") {
           await Users.updateOne({ email: data.email }, { isVerified: "Y" });
-          const password = await helper.generatePassword();
-          const hashedPassword = await bcrypt.hashSync(password, bcrypt.genSaltSync(10));
-          await Users.updateOne({ email: data.email }, { password: hashedPassword, });
-          let data1 = await Users.findOne({ email: data.email });
 
           const defaultPlan = await db.plans.findOne({ planType: "free", isDeleted: false, status: "active" });
           if (defaultPlan) {
             await Users.updateOne({ email: data.email }, { planId: defaultPlan._id, planType: defaultPlan.planType, planDuration: "month" });
           }
 
-          let email_payload = {
-            email: data1.email,
-            fullName: data1.fullName,
-            password: password,
-            role: data1.role,
-          };
-          await Emails.loginCredentialEmail(email_payload);
+          let data1 = await Users.findOne({ email: data.email });
 
           var userInfo;
           userInfo = Object.assign({}, data1._doc);
@@ -3482,17 +3472,13 @@ module.exports = {
       const date = new Date();
       data["status"] = "active";
       data["role"] = req.body.role ? req.body.role : "user";
-      // var password = req.body.password;
 
-      // if (req.body.password) {
-      //   data.password = await bcrypt.hashSync(
-      //     req.body.password,
-      //     bcrypt.genSaltSync(10)
-      //   );
-      // } else {
-      //   password = await helper.generatePassword();
-      //   data.password = await bcrypt.hashSync(password, bcrypt.genSaltSync(10));
-      // }
+      if (req.body.password) {
+        data.password = await bcrypt.hashSync(
+          req.body.password,
+          bcrypt.genSaltSync(10)
+        );
+      }
 
       data.isVerified = "N";
       data.createdAt = new Date();

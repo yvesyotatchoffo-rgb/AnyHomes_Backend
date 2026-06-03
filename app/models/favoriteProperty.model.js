@@ -23,6 +23,11 @@ module.exports = (mongoose) => {
     return object;
   });
 
+  // Performance indexes—accelèrent les $lookup et comptages par bien
+  schema.index({ property_id: 1 });
+  schema.index({ user_id: 1, property_id: 1 }, { unique: false });
+  schema.index({ property_id: 1, like: 1 });
+
   const Favorites = mongoose.model("favorites", schema);
   return Favorites;
 };

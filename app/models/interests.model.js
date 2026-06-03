@@ -145,6 +145,10 @@ module.exports = (mongoose) => {
         { timestamps: true }
     );
 
+    // Performance index—accelère le $lookup par propertyId dans le pipeline
+    schema.index({ propertyId: 1 });
+    schema.index({ buyerId: 1 });
+
     const interests = mongoose.model("interests", schema);
 
     return interests;

@@ -21,6 +21,9 @@ module.exports = (mongoose) => {
     { timestamps: true }
   );
 
+  // Performance index—accélère le $lookup unread messages par bien
+  schema.index({ property_id: 1, status: 1 });
+
   const Messages = mongoose.model("Messages", schema);
 
   return Messages;

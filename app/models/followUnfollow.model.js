@@ -43,6 +43,11 @@ module.exports = (mongoose) => {
         next();
     });
 
+    // Performance indexes—accelèrent les $lookup et comptages par bien
+    schema.index({ property_id: 1 });
+    schema.index({ user_id: 1, property_id: 1 }, { unique: false });
+    schema.index({ property_id: 1, follow_unfollow: 1 });
+
     const followUnfollow = mongoose.model('followUnfollow', schema);
     return followUnfollow;
 };
