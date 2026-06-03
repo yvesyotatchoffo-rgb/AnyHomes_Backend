@@ -42,6 +42,7 @@ router.use("/reviews", require("./reviews.routes"));
 router.use("/buildingPermits", require("./buildingPermit.routes"))
 router.use("/draft", require("./draftProperty.routes.js"))
 router.use("/schools", require("./schools.routes.js"));
+router.use("/school-types", require("./schoolTypes.routes.js"));
 router.use("/funnelUrl", require("./funnelUrl.routes.js"));
 router.use("/funnelVideoLike", require("./funnelVideoLike.routes.js"));
 router.use("/tags", require("./tags.routes.js"));

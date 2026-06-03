@@ -10,7 +10,7 @@ module.exports = (mongoose) => {
       schoolStatus: { type: String, enum: ["Public", "Private"] },             //Statut_public_prive
       address: { type: String },                  //Address
       postalCode: { type: Number },
-      schoolType: { type: String, enum: ["elementarySchool", "college", "kindergarten", "elementaryPrimary", "highschool"] },               //Type_Ecole
+      schoolType: { type: String },               //Type_Ecole
       phone: { type: String },                    //Telephone
       website: { type: String },                  //Web
       email: { type: String },                    //Email

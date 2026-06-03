@@ -91,6 +91,9 @@ module.exports = {
     "/marketplace/services",
     "/marketplace/categories",
     "/property/qr-code/flyers/debug",
-    "/property/qr-code/debug"
+    "/property/qr-code/debug",
+    "/school-types/list",
+    "/school-types/seed",
+    "/schools/list"
   ],
 };
