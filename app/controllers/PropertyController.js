@@ -907,14 +907,30 @@ module.exports = {
       }
 
       ///
+      // Early pagination setup: only the current page's documents go through expensive $lookup stages
+      const skipNo = (pageNumber - 1) * pageSize;
+      const earlyPaginate = !dynamicRentFiltering && !schoolStatus && !schoolName;
+      const schoolTypeArray = schoolType ? schoolType.split(",").map(type => type.trim()) : [];
+      const schoolIdArray = schoolId
+        ? schoolId.split(",").map(id => parseObjectId(id.trim())).filter(Boolean)
+        : [];
+
       const pipeline = [
         {
           $match: {
             ...query,
             ...(noOffMarketAccess ? { _id: null } : {}),
             ...financingProbabilityMatch,
+            ...(schoolTypeArray.length ? { "linkedSchools.type": { $in: schoolTypeArray } } : {}),
+            ...(schoolIdArray.length ? { "linkedSchools.schoolId": { $in: schoolIdArray } } : {}),
           },
         },
+        // Sort + paginate EARLY so only pageSize documents go through all the $lookup stages below
+        ...(earlyPaginate ? [
+          { $sort: sortquery },
+          { $skip: Number(skipNo) },
+          { $limit: Number(pageSize) },
+        ] : []),
         // {
         //   $geoNear: {
         //     near: {
@@ -949,12 +965,6 @@ module.exports = {
             as: "amenitiesDetails",
           },
         },
-        {
-          $unwind: {
-            path: "$amenitiesDetails",
-            preserveNullAndEmptyArrays: true,
-          },
-        },
 
         {
           $lookup: {
@@ -962,12 +972,6 @@ module.exports = {
             localField: "categories",
             foreignField: "_id",
             as: "categoriesDetails",
-          },
-        },
-        {
-          $unwind: {
-            path: "$categoriesDetails",
-            preserveNullAndEmptyArrays: true,
           },
         },
         {
@@ -1276,27 +1280,7 @@ module.exports = {
             linkedSchools: 1,
           },
         },
-        {
-          $match: {
-            ...query,
-            ...financingProbabilityMatch,
-          }
-        },
-        // {
-        //   $match: query,
-        // },
       ];
-
-      if (schoolType) {
-        const schoolTypeArray = schoolType.split(",").map(type => type.trim());
-        pipeline.push({
-          $match: {
-            "linkedSchools.type": {
-              $in: schoolTypeArray
-            }
-          }
-        });
-      }
 
       if (schoolStatus || schoolName) {
         pipeline.push({
@@ -1329,22 +1313,6 @@ module.exports = {
         pipeline.push({ $match: matchStage });
       }
 
-
-      if (schoolId) {
-        const schoolIdArray = schoolId
-          .split(",")
-          .map((id) => parseObjectId(id.trim()))
-          .filter(Boolean);
-        if (schoolIdArray.length) {
-          pipeline.push({
-            $match: {
-              "linkedSchools.schoolId": {
-                $in: schoolIdArray
-              }
-            }
-          });
-        }
-      }
 
       let group_stage = {
         $group: {
@@ -1698,24 +1666,39 @@ module.exports = {
       pipeline.push(group_stage);
       pipeline.push(sorting);
 
-      const canUseCountDocuments = !schoolType && !schoolStatus && !schoolName && !schoolId;
+      const canUseCountDocuments = !schoolStatus && !schoolName;
       let total = 0;
       if (!dynamicRentFiltering) {
         if (canUseCountDocuments) {
           total = await Property.countDocuments({
             ...query,
             ...financingProbabilityMatch,
+            ...(schoolTypeArray.length ? { "linkedSchools.type": { $in: schoolTypeArray } } : {}),
+            ...(schoolIdArray.length ? { "linkedSchools.schoolId": { $in: schoolIdArray } } : {}),
           });
         } else {
+          // Minimal count pipeline for school-detail filters (does not include $skip/$limit)
+          const countMatchStage = {};
+          if (schoolStatus) countMatchStage["linkedSchoolsDetails.status"] = schoolStatus;
+          if (schoolName) countMatchStage["linkedSchoolsDetails.EstablishmentName"] = { $regex: schoolName, $options: "i" };
           const totalResult = await db.property.aggregate([
-            ...pipeline,
+            {
+              $match: {
+                ...query,
+                ...financingProbabilityMatch,
+                ...(schoolTypeArray.length ? { "linkedSchools.type": { $in: schoolTypeArray } } : {}),
+                ...(schoolIdArray.length ? { "linkedSchools.schoolId": { $in: schoolIdArray } } : {}),
+              }
+            },
+            { $lookup: { from: "schools", localField: "linkedSchools.schoolId", foreignField: "_id", as: "linkedSchoolsDetails" } },
+            { $unwind: { path: "$linkedSchoolsDetails", preserveNullAndEmptyArrays: false } },
+            { $match: countMatchStage },
             { $count: "count" },
           ]);
           total = totalResult.length ? totalResult[0].count : 0;
         }
       }
 
-      const skipNo = (pageNumber - 1) * pageSize;
       let result;
       if (dynamicRentFiltering) {
         const allResults = await Property.aggregate([...pipeline]);
@@ -1738,11 +1721,13 @@ module.exports = {
         total = filteredResults.length;
         result = filteredResults.slice(skipNo, skipNo + pageSize);
       } else {
-        pipeline.push({
-          $skip: Number(skipNo),
-        }, {
-          $limit: Number(pageSize),
-        });
+        if (!earlyPaginate) {
+          pipeline.push({
+            $skip: Number(skipNo),
+          }, {
+            $limit: Number(pageSize),
+          });
+        }
         result = await Property.aggregate([...pipeline]);
       }
       return res.status(200).json({

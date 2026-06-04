@@ -364,8 +364,8 @@ const mockOwnerPipeline = {
         postalCode: '75018',
         city: 'Paris',
         country: 'France',
-        price: 1700000,
-        pricePerSqm: 7800,
+        price: 900000,
+        pricePerSqm: 10000,
         imageUrl: '/assets/img/blogs/blog-2.png',
       },
       metrics: {
