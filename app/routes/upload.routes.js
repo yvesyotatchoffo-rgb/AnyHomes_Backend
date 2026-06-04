@@ -203,7 +203,6 @@ router.post("/document", uploadJson.single("file"), function (req, res, next) {
 
 router.post(
   "/multiple-images",
-  cors(),
   upload.array("files"), // 'file' is the field name for multiple file
   function (req, res, next) {
     if (!req.files || req.files.length === 0) {
