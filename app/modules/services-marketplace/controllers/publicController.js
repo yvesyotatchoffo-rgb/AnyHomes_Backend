@@ -13,13 +13,32 @@ const stripeService = require('../services/stripeMarketplaceService');
 const db = require('../../../models');
 const Users = db.users;
 
+const DEFAULT_PAYMENT_INFO = "Vous payez le service à la commande et les fonds ne seront transmis au professionnel qu'au moment où vous nous confirmerez que le service a bien été réalisé par le professionnel.";
+
 async function getMarketplaceSettingsDoc() {
   let settings = await MarketplaceSettings.findOne();
   if (!settings) {
-    settings = await MarketplaceSettings.create({});
+    settings = await MarketplaceSettings.create({ paymentInfo: DEFAULT_PAYMENT_INFO });
+  } else if (!settings.paymentInfo) {
+    settings.paymentInfo = DEFAULT_PAYMENT_INFO;
+    await settings.save();
   }
   return settings;
 }
+
+exports.getPublicSettings = async (req, res) => {
+  try {
+    const settings = await getMarketplaceSettingsDoc();
+    return res.json({
+      success: true,
+      data: {
+        paymentInfo: settings.paymentInfo || "Vous payez le service à la commande et les fonds ne seront transmis au professionnel qu'au moment où vous nous confirmerez que le service a bien été réalisé par le professionnel.",
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
 
 function getPriceWithoutVat(totalTTC, vatPercent) {
   return totalTTC / (1 + vatPercent / 100);
@@ -351,7 +370,7 @@ exports.listServices = async (req, res) => {
         .skip(skip)
         .limit(Number(limit))
         .populate('category', 'name iconUrl')
-        .populate('pro', 'name avatar accountType isGlobalFavorite isLocalFavorite isTopAgent featuredSubheading featuredTitle featuredBio featuredExperienceYears featuredClientsAccompanied featuredRatingNotes featuredSatisfactionRate featuredProfilePhoto'),
+        .populate('pro', 'fullName firstName lastName companyName proTitle image city accountType role isGlobalFavorite isLocalFavorite isTopAgent foundingYear experienceStartYear featuredSubheading featuredTitle featuredBio featuredExperienceYears featuredClientsAccompanied featuredRatingNotes featuredSatisfactionRate featuredProfilePhoto'),
       ProService.countDocuments(filter),
     ]);
 
@@ -955,6 +974,51 @@ exports.listFavorites = async (req, res) => {
       .filter(Boolean);
 
     return res.json({ success: true, data: orderedServices });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * GET /marketplace/pro-stats/:proId
+ * Returns public stats for a given pro: completed order count, avg rating, review count
+ * No auth required.
+ */
+exports.getProPublicStats = async (req, res) => {
+  try {
+    const { proId } = req.params;
+    const lang = req.query.lang || 'fr';
+    const { ServiceOrder, ServiceReview, ProService } = getModels(lang);
+
+    if (!mongoose.Types.ObjectId.isValid(proId)) {
+      return res.status(400).json({ success: false, message: 'ID invalide' });
+    }
+
+    // Services actifs du pro
+    const proServices = await ProService.find({ pro: proId }).select('_id');
+    const serviceIds = proServices.map((s) => s._id);
+
+    // Commandes complétées (confirmées par l'acheteur)
+    const completedOrders = await ServiceOrder.countDocuments({
+      service: { $in: serviceIds },
+      status: { $in: ['confirmed_by_buyer', 'payout_released'] },
+    });
+
+    // Avis publiés
+    const reviews = await ServiceReview.find({ pro: proId, status: 'published' }).select('rating');
+    const reviewCount = reviews.length;
+    const avgRating = reviewCount
+      ? Math.round((reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10) / 10
+      : null;
+
+    return res.json({
+      success: true,
+      data: {
+        soldCount: completedOrders,
+        reviewCount,
+        avgRating,
+      },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

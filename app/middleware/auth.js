@@ -3,9 +3,17 @@ const unprotectedRoutes =
   require("../utls/unprotectedRoutes").unprotectedroutes;
 const db = require("../models");
 const Users = db.users;
+const unprotectedPrefixes = [
+  "/marketplace/pro-stats/",
+];
+
 module.exports = async (req, res, next) => {
   const url = req.url.split("?");
   if (unprotectedRoutes.includes(url[0])) {
+    next();
+    return;
+  }
+  if (unprotectedPrefixes.some((prefix) => url[0].startsWith(prefix))) {
     next();
     return;
   }
@@ -85,6 +93,7 @@ module.exports = async (req, res, next) => {
     req.identity = guestUser;
     req.isGuest = true;
   } else {
+    console.log(`[AUTH] Rejected request ${req.method} ${req.originalUrl} - no Authorization header and not guest`);
     return res.status(401).json({
       success: false,
       error: {

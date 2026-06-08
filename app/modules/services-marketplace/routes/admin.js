@@ -16,9 +16,13 @@ router.get('/stats', ctrl.getStats);
 // Services
 router.get('/services', validatePagination, ctrl.listAllServices);
 router.get('/services/export', ctrl.exportServicesCsv);
+router.post('/services/bulk-validate', ctrl.bulkValidateServices);
+router.post('/services/bulk-reject', ctrl.bulkRejectServices);
 router.post('/services/:id/validate', ctrl.validateService);
 router.post('/services/:id/reject', ctrl.rejectService);
 router.put('/services/:id/featured', ctrl.setFeaturedService);
+router.put('/services/:id', ctrl.updateService);
+router.delete('/services/:id', ctrl.deleteService);
 
 // Catégories
 router.get('/categories', ctrl.listCategories);

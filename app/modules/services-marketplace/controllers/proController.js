@@ -4,6 +4,7 @@ const ServiceOrderEn = require('../models/ServiceOrder_en.model');
 const ServiceOrderFr = require('../models/ServiceOrder_fr.model');
 const ServiceReviewEn = require('../models/ServiceReview_en.model');
 const ServiceReviewFr = require('../models/ServiceReview_fr.model');
+const MarketplaceSettings = require('../models/MarketplaceSettings.model');
 const stripeService = require('../services/stripeMarketplaceService');
 
 function getModels(lang) {
@@ -24,9 +25,10 @@ exports.createProService = async (req, res) => {
     const lang = req.query.lang || 'fr';
     const { ProService } = getModels(lang);
     const proId = req.identity && req.identity._id;
+    console.log(`[PRO-SVC] createProService called - proId=${proId} body=${JSON.stringify(req.body).slice(0,200)}`);
     if (!proId) return res.status(401).json({ success: false, message: 'Authentification requise' });
 
-    const { title, description, summary, category, priceTTC, quantity, modality, city, radiusKm, delivery_time, imageUrls } = req.body;
+    const { title, description, summary, d1, category, priceTTC, quantity, quantity_label, modality, city, radiusKm, delivery_time, imageUrls } = req.body;
 
     if (!title || !category || priceTTC === undefined || !city || !radiusKm) {
       return res.status(400).json({ success: false, message: 'Champs obligatoires manquants : title, category, priceTTC, city, radiusKm' });
@@ -38,19 +40,34 @@ exports.createProService = async (req, res) => {
       return res.status(400).json({ success: false, message: 'quantity doit être > 0 si renseignée' });
     }
 
+    // draft=true → brouillon, draft=false → soumettre à validation (ou activer si auto-validation)
+    const isDraft = req.body.draft !== false;
+    let initialStatus = 'draft';
+    if (!isDraft) {
+      const settings = await MarketplaceSettings.findOne();
+      initialStatus = (settings && settings.autoValidateServices) ? 'active' : 'pending_validation';
+    }
+
     const service = await ProService.create({
-      title, description, summary, category,
+      title, description, summary, d1, category,
       pro: proId,
       priceTTC,
       ...(quantity !== undefined ? { quantity } : {}),
+      ...(quantity_label !== undefined ? { quantity_label } : {}),
       modality: modality || 'Présentiel',
       city, radiusKm,
       delivery_time: delivery_time || undefined,
       imageUrls: imageUrls || [],
-      status: 'draft',
+      status: initialStatus,
     });
+    console.log(`[PRO-SVC] createProService created id=${service._id} status=${initialStatus}`);
 
-    return res.status(201).json({ success: true, data: service, message: 'Service créé (statut: brouillon, en attente de validation admin)' });
+    const msg = initialStatus === 'active'
+      ? 'Service créé et activé automatiquement'
+      : initialStatus === 'pending_validation'
+        ? 'Service soumis à validation admin'
+        : 'Service enregistré en brouillon';
+    return res.status(201).json({ success: true, data: service, message: msg });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
@@ -97,18 +114,35 @@ exports.updateProService = async (req, res) => {
     const service = await ProService.findOne({ _id: req.params.id, pro: proId });
     if (!service) return res.status(404).json({ success: false, message: 'Service introuvable' });
 
-    if (!['draft', 'inactive'].includes(service.status)) {
-      return res.status(400).json({ success: false, message: 'Seuls les services en brouillon ou inactifs peuvent être modifiés' });
+    if (service.status === 'pending_validation') {
+      return res.status(400).json({ success: false, message: 'Ce service est en attente de validation admin et ne peut pas être modifié' });
     }
 
-    const allowed = ['title', 'description', 'summary', 'priceTTC', 'quantity', 'modality', 'city', 'radiusKm', 'delivery_time', 'imageUrls'];
+    const allowed = ['title', 'description', 'summary', 'd1', 'priceTTC', 'quantity', 'quantity_label', 'modality', 'city', 'radiusKm', 'delivery_time', 'imageUrls'];
     allowed.forEach(field => {
       if (req.body[field] !== undefined) service[field] = req.body[field];
     });
-    service.status = 'draft';
+
+    // Explicit status override (e.g. activate → pending_validation or deactivate → inactive)
+    if (req.body.status === 'inactive') {
+      service.status = 'inactive';
+    } else if (req.body.status === 'active') {
+      // Pro tries to activate: submit for validation (or auto-validate)
+      const settings = await MarketplaceSettings.findOne();
+      service.status = (settings && settings.autoValidateServices) ? 'active' : 'pending_validation';
+    } else if (req.body.draft === false) {
+      // Save + submit — if already active, keep active (no re-validation needed)
+      if (service.status !== 'active') {
+        const settings = await MarketplaceSettings.findOne();
+        service.status = (settings && settings.autoValidateServices) ? 'active' : 'pending_validation';
+      }
+    } else if (req.body.draft === true) {
+      service.status = 'draft';
+    }
+    // If no status/draft directive: preserve current status (active service stays active after edit)
     await service.save();
 
-    return res.json({ success: true, data: service, message: 'Service mis à jour (re-soumis pour validation)' });
+    return res.json({ success: true, data: service, message: 'Service mis à jour' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

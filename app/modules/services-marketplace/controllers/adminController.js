@@ -23,10 +23,16 @@ function getModels(lang) {
   };
 }
 
+const DEFAULT_PAYMENT_INFO = "Vous payez le service à la commande et les fonds ne seront transmis au professionnel qu'au moment où vous nous confirmerez que le service a bien été réalisé par le professionnel.";
+
 async function getMarketplaceSettingsDoc() {
   let settings = await MarketplaceSettings.findOne();
   if (!settings) {
-    settings = await MarketplaceSettings.create({});
+    settings = await MarketplaceSettings.create({ paymentInfo: DEFAULT_PAYMENT_INFO });
+  } else if (!settings.paymentInfo) {
+    // Rétro-compatibilité : document existant sans paymentInfo
+    settings.paymentInfo = DEFAULT_PAYMENT_INFO;
+    await settings.save();
   }
   return settings;
 }
@@ -41,6 +47,8 @@ function settingsResponse(settings) {
     commissionPercentHT,
     commissionPercentTTC,
     maxServicesPerPro: settings.maxServicesPerPro ?? 10,
+    paymentInfo: settings.paymentInfo ?? '',
+    autoValidateServices: settings.autoValidateServices ?? false,
   };
 }
 
@@ -55,7 +63,7 @@ exports.getMarketplaceSettings = async (req, res) => {
 
 exports.updateMarketplaceSettings = async (req, res) => {
   try {
-    const { payoutDelayDays, vatPercent, commissionPercentHT, commissionPercentTTC, maxServicesPerPro } = req.body;
+    const { payoutDelayDays, vatPercent, commissionPercentHT, commissionPercentTTC, maxServicesPerPro, paymentInfo } = req.body;
     const settings = await getMarketplaceSettingsDoc();
 
     if (payoutDelayDays !== undefined) {
@@ -88,6 +96,14 @@ exports.updateMarketplaceSettings = async (req, res) => {
       const parsed = Number(maxServicesPerPro);
       if (Number.isNaN(parsed) || parsed < 1) return res.status(400).json({ success: false, message: 'Nombre de services maximum invalide' });
       settings.maxServicesPerPro = parsed;
+    }
+
+    if (paymentInfo !== undefined) {
+      settings.paymentInfo = String(paymentInfo);
+    }
+
+    if (req.body.autoValidateServices !== undefined) {
+      settings.autoValidateServices = Boolean(req.body.autoValidateServices);
     }
 
     await settings.save();
@@ -275,7 +291,7 @@ exports.validateService = async (req, res) => {
     const service = await ProService.findById(req.params.id);
     if (!service) return res.status(404).json({ success: false, message: 'Service introuvable' });
 
-    if (service.status !== 'draft') {
+    if (!['draft', 'pending_validation', 'inactive'].includes(service.status)) {
       return res.status(400).json({ success: false, message: `Le service est déjà au statut : ${service.status}` });
     }
 
@@ -310,6 +326,40 @@ exports.rejectService = async (req, res) => {
 };
 
 /**
+ * POST /admin/marketplace/services/bulk-validate
+ * Valider plusieurs services en masse
+ */
+exports.bulkValidateServices = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService } = getModels(lang);
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ success: false, message: 'ids requis' });
+    const result = await ProService.updateMany({ _id: { $in: ids }, status: { $in: ['draft', 'pending_validation', 'inactive'] } }, { $set: { status: 'active' } });
+    return res.json({ success: true, modifiedCount: result.modifiedCount, message: `${result.modifiedCount} service(s) validé(s)` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * POST /admin/marketplace/services/bulk-reject
+ * Rejeter plusieurs services en masse
+ */
+exports.bulkRejectServices = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService } = getModels(lang);
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ success: false, message: 'ids requis' });
+    const result = await ProService.updateMany({ _id: { $in: ids } }, { $set: { status: 'inactive' } });
+    return res.json({ success: true, modifiedCount: result.modifiedCount, message: `${result.modifiedCount} service(s) rejeté(s)` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
  * PUT /admin/marketplace/services/:id/featured
  * Mettre en avant / retirer la mise en avant d'un service
  */
@@ -325,6 +375,59 @@ exports.setFeaturedService = async (req, res) => {
     await service.save();
 
     return res.json({ success: true, data: service, message: `Service ${service.isFeatured ? 'mis en avant' : 'retiré de la mise en avant'}` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * PUT /admin/marketplace/services/:id
+ * Mettre à jour un service (admin)
+ */
+exports.updateService = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService } = getModels(lang);
+    const allowed = ['title', 'description', 'summary', 'd1', 'd4', 'priceTTC', 'quantity', 'modality', 'city', 'radiusKm', 'delivery_time', 'imageUrls', 'status', 'category', 'isFree', 'is_free', 'draft'];
+    const service = await ProService.findById(req.params.id);
+    if (!service) return res.status(404).json({ success: false, message: 'Service introuvable' });
+
+    // Apply allowed fields
+    allowed.forEach(field => {
+      if (req.body[field] !== undefined) service[field] = req.body[field];
+    });
+
+    // Special handling: 'draft' boolean → status
+    if (req.body.draft !== undefined) {
+      service.status = req.body.draft ? 'draft' : (req.body.status || service.status);
+    }
+
+    // Special handling: isFree / is_free → set priceTTC to 0
+    if (req.body.isFree !== undefined || req.body.is_free !== undefined) {
+      const val = req.body.isFree !== undefined ? req.body.isFree : req.body.is_free;
+      if (val) service.priceTTC = 0;
+    }
+
+    await service.save();
+    return res.json({ success: true, data: service, message: 'Service mis à jour par admin' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
+ * DELETE /admin/marketplace/services/:id
+ * Supprimer définitivement un service (admin)
+ */
+exports.deleteService = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService } = getModels(lang);
+    const service = await ProService.findById(req.params.id);
+    if (!service) return res.status(404).json({ success: false, message: 'Service introuvable' });
+
+    await ProService.deleteOne({ _id: req.params.id });
+    return res.json({ success: true, message: 'Service supprimé définitivement' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

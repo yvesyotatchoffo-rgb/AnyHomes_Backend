@@ -79,6 +79,21 @@ const { monthlyCampaignLimit } = require("./app/cron/campaign.cron.js");
 //     next();
 // });
 
+const fs = require('fs');
+// Quick request logger for marketplace pro service routes (help debug incoming requests)
+app.use((req, res, next) => {
+  try {
+    if (req.originalUrl && req.originalUrl.startsWith('/pro/marketplace/services')) {
+      const hasAuth = !!req.headers.authorization;
+      const guestMode = req.headers['x-guest-mode'] || req.query.guest || false;
+      const line = `${new Date().toISOString()} REQ ${req.method} ${req.originalUrl} auth=${hasAuth} x-guest-mode=${guestMode}\n`;
+      console.log(line.trim());
+      try { fs.appendFileSync('/tmp/pro_marketplace_requests.log', line); } catch (e) { /* ignore file errors */ }
+    }
+  } catch (e) { /* ignore logging errors */ }
+  next();
+});
+
 db.mongoose.set("strictQuery", false);
 db.mongoose
   .connect(db.url, {})

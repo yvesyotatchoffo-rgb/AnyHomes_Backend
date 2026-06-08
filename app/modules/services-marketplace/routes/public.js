@@ -14,8 +14,14 @@ router.get('/services', validatePagination, ctrl.listServices);
 router.get('/services/:id', ctrl.getServiceDetail);
 router.get('/favorite-pros', ctrl.listFavoritePros);
 
+// Statistiques publiques d'un pro
+router.get('/pro-stats/:proId', ctrl.getProPublicStats);
+
 // Catégories
 router.get('/categories', ctrl.listCategories);
+
+// Paramètres publics (paymentInfo, etc.)
+router.get('/settings', ctrl.getPublicSettings);
 
 // Commandes (acheteur authentifié)
 router.post('/orders', validateCreateOrder, ctrl.createOrder);
