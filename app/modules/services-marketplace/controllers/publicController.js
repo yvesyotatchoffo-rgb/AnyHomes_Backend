@@ -173,7 +173,17 @@ function getMockOrders(lang) {
       createdAt: '2026-04-12T10:30:00Z',
       service: { title_fr: 'Estimation immobilière de votre bien', title_en: 'Property valuation', price_ttc: 0, imageUrls: [] },
       property: { title: 'Appartement T3 — 12 rue de Béthune, Lille' },
-      provider: { name: 'Geoffroy Papelier', city: 'Lille' },
+      proSnapshot: {
+        _id: 'pro-001',
+        fullName: 'Geoffroy Papelier',
+        firstName: 'Geoffroy',
+        lastName: 'Papelier',
+        companyName: 'Agence Papelier Immobilier',
+        email: 'geoffroy@papelier.fr',
+        city: 'Lille',
+        image: '/assets/img/agent-geoffroy-papelier.jpg',
+        proTitle: 'Agent immobilier',
+      },
       quantity: 1,
       totalAmount: 0,
       status: 'confirmed_by_buyer',
@@ -364,6 +374,8 @@ exports.listServices = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const sortOrder = order === 'asc' ? 1 : -1;
 
+    const { ServiceReview, ServiceOrder } = getModels(lang);
+
     const [services, total] = await Promise.all([
       ProService.find(filter)
         .sort({ isFeatured: -1, [sortBy]: sortOrder })
@@ -383,9 +395,42 @@ exports.listServices = async (req, res) => {
       });
     }
 
+    // Calculer avgRating, reviewCount, soldCount par pro en une seule requête
+    const proIds = [...new Set(services.map(s => s.pro?._id).filter(Boolean))];
+    const [reviewStats, soldStats] = await Promise.all([
+      ServiceReview.aggregate([
+        { $match: { pro: { $in: proIds }, status: 'published' } },
+        { $group: { _id: '$pro', avgRating: { $avg: '$rating' }, reviewCount: { $sum: 1 } } },
+      ]),
+      ServiceOrder.aggregate([
+        { $match: { service: { $in: services.map(s => s._id) }, status: { $in: ['confirmed_by_buyer', 'payout_released'] } } },
+        { $lookup: { from: ProService.collection.collectionName, localField: 'service', foreignField: '_id', as: 'svc' } },
+        { $unwind: '$svc' },
+        { $group: { _id: '$svc.pro', soldCount: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const reviewMap = {};
+    reviewStats.forEach(r => { reviewMap[String(r._id)] = { avgRating: Math.round(r.avgRating * 10) / 10, reviewCount: r.reviewCount }; });
+    const soldMap = {};
+    soldStats.forEach(s => { soldMap[String(s._id)] = s.soldCount; });
+
+    const enriched = services.map(svc => {
+      const obj = svc.toObject ? svc.toObject() : svc;
+      const proIdStr = String(obj.pro?._id || '');
+      const stats = reviewMap[proIdStr] || {};
+      const sold = soldMap[proIdStr];
+      if (obj.pro) {
+        if (stats.avgRating != null) obj.pro.avgRating = stats.avgRating;
+        if (stats.reviewCount != null) obj.pro.reviewCount = stats.reviewCount;
+        if (sold != null) obj.pro.soldCount = sold;
+      }
+      return obj;
+    });
+
     return res.json({
       success: true,
-      data: services,
+      data: enriched,
       pagination: { page: Number(page), limit: Number(limit), total, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
@@ -400,12 +445,12 @@ exports.listServices = async (req, res) => {
 exports.getServiceDetail = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
-    const { ProService, ServiceReview } = getModels(lang);
+    const { ProService, ServiceReview, ServiceOrder } = getModels(lang);
     const isGuestRequest = req.isGuest || req.query.guest === 'true' || req.headers['x-guest-mode'] === 'true' || req.headers['x-guest-mode'] === '1';
 
     let service = await ProService.findOne({ _id: req.params.id, status: 'active' })
       .populate('category', 'name iconUrl')
-      .populate('pro', 'name avatar email');
+      .populate('pro', 'fullName firstName lastName companyName proTitle image avatar photo city accountType role isGlobalFavorite isLocalFavorite isTopAgent foundingYear experienceStartYear featuredSubheading featuredTitle featuredBio featuredExperienceYears featuredClientsAccompanied featuredRatingNotes featuredSatisfactionRate featuredProfilePhoto email');
 
     if (!service && isGuestRequest) {
       const mockServices = getMockServices(lang);
@@ -417,21 +462,28 @@ exports.getServiceDetail = async (req, res) => {
     if (typeof service.toObject !== 'function') {
       return res.json({
         success: true,
-        data: {
-          ...service,
-          reviews: [],
-          avgRating: service.rating ?? null,
-        },
+        data: { ...service, reviews: [], avgRating: service.rating ?? null },
       });
     }
 
-    const reviewDocs = await ServiceReview.find({ pro: service.pro, status: 'published' })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .populate('buyer', 'name avatar');
-    const avgRating = reviewDocs.length ? reviewDocs.reduce((sum, r) => sum + r.rating, 0) / reviewDocs.length : null;
+    const proId = service.pro?._id || service.pro;
+    const [reviewDocs, soldCount] = await Promise.all([
+      ServiceReview.find({ pro: proId, status: 'published' })
+        .sort({ createdAt: -1 }).limit(10).populate('buyer', 'name avatar'),
+      ServiceOrder.countDocuments({ service: service._id, status: { $in: ['confirmed_by_buyer', 'payout_released'] } }),
+    ]);
 
-    return res.json({ success: true, data: { ...service.toObject(), reviews: reviewDocs, avgRating } });
+    const reviewCount = reviewDocs.length;
+    const avgRating = reviewCount ? Math.round((reviewDocs.reduce((sum, r) => sum + r.rating, 0) / reviewCount) * 10) / 10 : null;
+
+    const serviceObj = service.toObject();
+    if (serviceObj.pro) {
+      serviceObj.pro.avgRating = avgRating;
+      serviceObj.pro.reviewCount = reviewCount;
+      serviceObj.pro.soldCount = soldCount;
+    }
+
+    return res.json({ success: true, data: { ...serviceObj, reviews: reviewDocs, avgRating } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
@@ -470,20 +522,27 @@ exports.createOrder = async (req, res) => {
     const propertyId = req.body.propertyId || req.body.property_id || null;
     const { quantity } = req.body;
 
+    // Validate ObjectId before querying
+    if (!serviceId || !mongoose.Types.ObjectId.isValid(serviceId)) {
+      return res.status(400).json({ success: false, message: 'Service introuvable (identifiant invalide)' });
+    }
+
     const service = await ProService.findOne({ _id: serviceId, status: 'active' })
-      .populate('pro', 'name email stripeConnectAccountId');
+      .populate('pro', 'fullName firstName lastName companyName name email stripeConnectAccountId image avatar photo city accountType proTitle');
     if (!service) return res.status(404).json({ success: false, message: 'Service introuvable ou inactif' });
 
     if (String(service.pro._id) === String(buyerId)) {
       return res.status(400).json({ success: false, message: 'Vous ne pouvez pas commander votre propre service' });
     }
 
+    const isFreeService = service.is_free === true || service.priceTTC === 0;
+
     if (quantity > service.quantity) {
       return res.status(400).json({ success: false, message: `Quantité max disponible : ${service.quantity}` });
     }
 
     const settings = await getMarketplaceSettingsDoc();
-    const totalPriceTTC = service.priceTTC * quantity;
+    const totalPriceTTC = isFreeService ? 0 : service.priceTTC * quantity;
     const vatPercent = settings.vatPercent ?? 20;
     const commissionPercentHT = settings.commissionPercent ?? 25;
     const totalPriceHT = Math.round((totalPriceTTC / (1 + vatPercent / 100)) * 100) / 100;
@@ -493,7 +552,7 @@ exports.createOrder = async (req, res) => {
     const proAmount = Math.round((totalPriceHT - commissionHT) * 100) / 100;
     const feeAmountCents = Math.round(platformAmount * 100);
 
-    // ── Créer la commande en base (statut pending_payment) ──────────────────
+    // ── Créer la commande en base ───────────────────────────────────────────
     const order = await ServiceOrder.create({
       serviceSnapshot: service.toObject(),
       proSnapshot: service.pro.toObject ? service.pro.toObject() : service.pro,
@@ -507,8 +566,18 @@ exports.createOrder = async (req, res) => {
       commissionHT,
       platformAmount,
       proAmount,
-      status: 'pending_payment',
+      status: isFreeService ? 'paid' : 'pending_payment',
     });
+
+    // ── Services gratuits : pas de Stripe, retour direct ────────────────────
+    if (isFreeService) {
+      return res.status(201).json({
+        success: true,
+        data: order,
+        stripe: null,
+        message: 'Réservation créée',
+      });
+    }
 
     // ── Créer le PaymentIntent Stripe (escrow) ──────────────────────────────
     let stripeData = null;
@@ -586,13 +655,68 @@ exports.listOrders = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('service', 'title priceTTC imageUrls'),
+        .populate({
+          path: 'service',
+          select: 'title title_fr title_en description description_fr description_en priceTTC imageUrls category modality zone_covered radiusKm quantity delivery_time d1 summary',
+          populate: { 
+            path: 'pro', 
+            select: 'fullName firstName lastName companyName name email image avatar photo companyLogo coverImage featuredProfilePhoto isGlobalFavorite isLocalFavorite city accountType proTitle foundingYear experienceStartYear avgRating reviewCount soldCount'
+          }
+        })
+        .populate('property_id'),
       ServiceOrder.countDocuments(filter),
     ]);
 
+    // Enrichir les données : s'assurer que proSnapshot contient les infos du pro
+    // Cela garantit la compatibilité avec les anciennes commandes qui n'avaient pas de proSnapshot complet
+    const enrichedItems = items.map(order => {
+      const orderObj = order.toObject ? order.toObject() : order;
+      
+      // Si service.pro est populé avec un objet complet
+      if (orderObj.service && orderObj.service.pro && typeof orderObj.service.pro === 'object' && orderObj.service.pro._id) {
+        const pro = orderObj.service.pro;
+        
+        // Si proSnapshot n'existe pas, est incomplet, ou manque des champs essentiels
+        // Vérifier si proSnapshot manque fullName ou companyName (champs clés pour l'affichage)
+        const isIncomplete = !orderObj.proSnapshot || 
+                            (!orderObj.proSnapshot.fullName && !orderObj.proSnapshot.companyName);
+        
+        if (isIncomplete) {
+          orderObj.proSnapshot = {
+            _id: pro._id,
+            fullName: pro.fullName || orderObj.proSnapshot?.fullName || null,
+            firstName: pro.firstName || orderObj.proSnapshot?.firstName || null,
+            lastName: pro.lastName || orderObj.proSnapshot?.lastName || null,
+            companyName: pro.companyName || orderObj.proSnapshot?.companyName || null,
+            name: pro.name || orderObj.proSnapshot?.name || null,
+            email: pro.email || orderObj.proSnapshot?.email || null,
+            image: pro.image || orderObj.proSnapshot?.image || null,
+            avatar: pro.avatar || orderObj.proSnapshot?.avatar || null,
+            photo: pro.photo || orderObj.proSnapshot?.photo || null,
+            companyLogo: pro.companyLogo || orderObj.proSnapshot?.companyLogo || null,
+            coverImage: pro.coverImage || orderObj.proSnapshot?.coverImage || null,
+            featuredProfilePhoto: pro.featuredProfilePhoto || orderObj.proSnapshot?.featuredProfilePhoto || null,
+            isGlobalFavorite: pro.isGlobalFavorite || orderObj.proSnapshot?.isGlobalFavorite || false,
+            isLocalFavorite: pro.isLocalFavorite || orderObj.proSnapshot?.isLocalFavorite || false,
+            city: pro.city || orderObj.proSnapshot?.city || null,
+            accountType: pro.accountType || orderObj.proSnapshot?.accountType || null,
+            proTitle: pro.proTitle || orderObj.proSnapshot?.proTitle || null,
+            foundingYear: pro.foundingYear || orderObj.proSnapshot?.foundingYear || null,
+            experienceStartYear: pro.experienceStartYear || orderObj.proSnapshot?.experienceStartYear || null,
+            avgRating: pro.avgRating || orderObj.proSnapshot?.avgRating || null,
+            reviewCount: pro.reviewCount || orderObj.proSnapshot?.reviewCount || null,
+            soldCount: pro.soldCount || orderObj.proSnapshot?.soldCount || null,
+            stripeConnectAccountId: pro.stripeConnectAccountId || orderObj.proSnapshot?.stripeConnectAccountId || null
+          };
+        }
+      }
+      
+      return orderObj;
+    });
+
     return res.json({
       success: true,
-      data: items,
+      data: enrichedItems,
       pagination: {
         page,
         limit,
@@ -962,7 +1086,7 @@ exports.listFavorites = async (req, res) => {
 
     const services = await ProService.find({ _id: { $in: serviceIds }, status: 'active' })
       .populate('category', 'name iconUrl name_fr')
-      .populate('pro', 'name avatar email');
+      .populate('pro', 'fullName firstName lastName companyName proTitle image avatar city accountType role isGlobalFavorite isLocalFavorite isTopAgent foundingYear experienceStartYear featuredSubheading featuredTitle featuredBio featuredExperienceYears featuredClientsAccompanied featuredRatingNotes featuredSatisfactionRate featuredProfilePhoto email');
 
     const servicesById = services.reduce((acc, svc) => {
       acc[svc._id.toString()] = svc;
@@ -973,7 +1097,40 @@ exports.listFavorites = async (req, res) => {
       .map((serviceId) => servicesById[serviceId.toString()])
       .filter(Boolean);
 
-    return res.json({ success: true, data: orderedServices });
+    // Enrichir avec avgRating, reviewCount, soldCount par pro
+    const { ServiceReview, ServiceOrder } = getModels(lang);
+    const proIds = [...new Set(orderedServices.map(s => s.pro?._id).filter(Boolean))];
+    const [reviewStats, soldStats] = await Promise.all([
+      ServiceReview.aggregate([
+        { $match: { pro: { $in: proIds }, status: 'published' } },
+        { $group: { _id: '$pro', avgRating: { $avg: '$rating' }, reviewCount: { $sum: 1 } } },
+      ]),
+      ServiceOrder.aggregate([
+        { $match: { service: { $in: orderedServices.map(s => s._id) }, status: { $in: ['confirmed_by_buyer', 'payout_released'] } } },
+        { $lookup: { from: ProService.collection.collectionName, localField: 'service', foreignField: '_id', as: 'svc' } },
+        { $unwind: '$svc' },
+        { $group: { _id: '$svc.pro', soldCount: { $sum: 1 } } },
+      ]),
+    ]);
+    const reviewMap = {};
+    reviewStats.forEach(r => { reviewMap[String(r._id)] = { avgRating: Math.round(r.avgRating * 10) / 10, reviewCount: r.reviewCount }; });
+    const soldMap = {};
+    soldStats.forEach(s => { soldMap[String(s._id)] = s.soldCount; });
+
+    const enriched = orderedServices.map(svc => {
+      const obj = svc.toObject ? svc.toObject() : svc;
+      const proIdStr = String(obj.pro?._id || '');
+      const stats = reviewMap[proIdStr] || {};
+      const sold = soldMap[proIdStr];
+      if (obj.pro) {
+        if (stats.avgRating != null) obj.pro.avgRating = stats.avgRating;
+        if (stats.reviewCount != null) obj.pro.reviewCount = stats.reviewCount;
+        if (sold != null) obj.pro.soldCount = sold;
+      }
+      return obj;
+    });
+
+    return res.json({ success: true, data: enriched });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }

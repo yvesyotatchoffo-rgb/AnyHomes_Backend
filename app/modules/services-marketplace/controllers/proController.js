@@ -28,7 +28,7 @@ exports.createProService = async (req, res) => {
     console.log(`[PRO-SVC] createProService called - proId=${proId} body=${JSON.stringify(req.body).slice(0,200)}`);
     if (!proId) return res.status(401).json({ success: false, message: 'Authentification requise' });
 
-    const { title, description, summary, d1, category, priceTTC, quantity, quantity_label, modality, city, radiusKm, delivery_time, imageUrls } = req.body;
+    const { title, description, summary, d1, category, priceTTC, price, quantity, quantity_label, modality, city, radiusKm, delivery_time, imageUrls, is_free } = req.body;
 
     if (!title || !category || priceTTC === undefined || !city || !radiusKm) {
       return res.status(400).json({ success: false, message: 'Champs obligatoires manquants : title, category, priceTTC, city, radiusKm' });
@@ -52,6 +52,8 @@ exports.createProService = async (req, res) => {
       title, description, summary, d1, category,
       pro: proId,
       priceTTC,
+      priceHT: price !== undefined ? Number(price) : null,
+      is_free: is_free === true || is_free === 'true',
       ...(quantity !== undefined ? { quantity } : {}),
       ...(quantity_label !== undefined ? { quantity_label } : {}),
       modality: modality || 'Présentiel',
@@ -80,7 +82,7 @@ exports.createProService = async (req, res) => {
 exports.listProServices = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
-    const { ProService } = getModels(lang);
+    const { ProService, ServiceOrder, ServiceReview } = getModels(lang);
     const proId = req.identity && req.identity._id;
     if (!proId) return res.status(401).json({ success: false, message: 'Authentification requise' });
 
@@ -89,12 +91,76 @@ exports.listProServices = async (req, res) => {
     if (status) filter.status = status;
 
     const skip = (Number(page) - 1) * Number(limit);
-    const [services, total] = await Promise.all([
+    const [services, total, settings] = await Promise.all([
       ProService.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).populate('category', 'name'),
       ProService.countDocuments(filter),
+      MarketplaceSettings.findOne(),
     ]);
 
-    return res.json({ success: true, data: services, pagination: { page: Number(page), limit: Number(limit), total } });
+    const vatPercent = settings?.vatPercent ?? 20;
+    const serviceIds = services.map(s => s._id);
+
+    // Calculer order_count, total_revenue et stats pro en parallèle
+    const [orderStats, reviewStats, soldCount] = await Promise.all([
+      ServiceOrder.aggregate([
+        { $match: { service: { $in: serviceIds }, status: { $in: ['confirmed_by_buyer', 'payout_released', 'paid', 'accepted_by_pro', 'in_progress', 'delivered_by_pro', 'pending_payment'] } } },
+        { $group: { _id: '$service', order_count: { $sum: 1 }, total_revenue: { $sum: '$proAmount' } } },
+      ]),
+      ServiceReview.aggregate([
+        { $match: { pro: proId, status: 'published' } },
+        { $group: { _id: null, avgRating: { $avg: '$rating' }, reviewCount: { $sum: 1 } } },
+      ]),
+      ServiceOrder.countDocuments({ service: { $in: serviceIds }, status: { $in: ['confirmed_by_buyer', 'payout_released'] } }),
+    ]);
+
+    const statsMap = {};
+    orderStats.forEach(s => { statsMap[String(s._id)] = { order_count: s.order_count, total_revenue: s.total_revenue }; });
+
+    const proReviewStats = reviewStats[0] || {};
+    const avgRating = proReviewStats.avgRating != null ? Math.round(proReviewStats.avgRating * 10) / 10 : null;
+    const reviewCount = proReviewStats.reviewCount || 0;
+
+    // Construire l'objet pro depuis req.identity
+    const identity = req.identity;
+    const proObj = {
+      _id: identity._id,
+      fullName: identity.fullName || null,
+      firstName: identity.firstName || null,
+      lastName: identity.lastName || null,
+      companyName: identity.companyName || null,
+      name: identity.name || null,
+      email: identity.email || null,
+      image: identity.image || null,
+      avatar: identity.avatar || null,
+      photo: identity.photo || null,
+      featuredProfilePhoto: identity.featuredProfilePhoto || null,
+      proTitle: identity.proTitle || null,
+      city: identity.city || null,
+      role: identity.role || null,
+      accountType: identity.accountType || null,
+      isGlobalFavorite: identity.isGlobalFavorite || false,
+      isLocalFavorite: identity.isLocalFavorite || false,
+      isTopAgent: identity.isTopAgent || false,
+      foundingYear: identity.foundingYear || null,
+      experienceStartYear: identity.experienceStartYear || null,
+      avgRating,
+      reviewCount,
+      soldCount,
+    };
+
+    const enriched = services.map(svc => {
+      const obj = svc.toObject ? svc.toObject() : svc;
+      const svcStats = statsMap[String(obj._id)] || {};
+      obj.order_count = svcStats.order_count || 0;
+      obj.total_revenue = svcStats.total_revenue || 0;
+      if (!obj.priceHT && obj.priceTTC) {
+        obj.priceHT = Math.round((obj.priceTTC / (1 + vatPercent / 100)) * 100) / 100;
+      }
+      obj.pro = proObj;
+      return obj;
+    });
+
+    return res.json({ success: true, data: enriched, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
@@ -118,10 +184,11 @@ exports.updateProService = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Ce service est en attente de validation admin et ne peut pas être modifié' });
     }
 
-    const allowed = ['title', 'description', 'summary', 'd1', 'priceTTC', 'quantity', 'quantity_label', 'modality', 'city', 'radiusKm', 'delivery_time', 'imageUrls'];
+    const allowed = ['title', 'description', 'summary', 'd1', 'priceTTC', 'is_free', 'quantity', 'quantity_label', 'modality', 'city', 'radiusKm', 'delivery_time', 'imageUrls'];
     allowed.forEach(field => {
       if (req.body[field] !== undefined) service[field] = req.body[field];
     });
+    if (req.body.price !== undefined) service.priceHT = Number(req.body.price);
 
     // Explicit status override (e.g. activate → pending_validation or deactivate → inactive)
     if (req.body.status === 'inactive') {
@@ -193,11 +260,37 @@ exports.listProOrders = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
     const [orders, total] = await Promise.all([
-      ServiceOrder.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)).populate('buyer', 'name email'),
+      ServiceOrder.find(filter)
+        .sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+        .populate('buyer', 'name email image avatar')
+        .populate('property_id', 'title address _id'),
       ServiceOrder.countDocuments(filter),
     ]);
 
-    return res.json({ success: true, data: orders, pagination: { page: Number(page), limit: Number(limit), total } });
+    // Enrich proSnapshot with current pro identity (in case snapshot is incomplete)
+    const pro = req.identity;
+    const enrichedOrders = orders.map(o => {
+      const obj = o.toObject ? o.toObject() : o;
+      if (!obj.proSnapshot || !obj.proSnapshot.fullName && !obj.proSnapshot.name) {
+        obj.proSnapshot = {
+          ...obj.proSnapshot,
+          _id: pro._id,
+          fullName: pro.fullName || obj.proSnapshot?.fullName || null,
+          firstName: pro.firstName || obj.proSnapshot?.firstName || null,
+          lastName: pro.lastName || obj.proSnapshot?.lastName || null,
+          name: pro.name || obj.proSnapshot?.name || null,
+          email: pro.email || obj.proSnapshot?.email || null,
+          image: pro.image || obj.proSnapshot?.image || null,
+          avatar: pro.avatar || obj.proSnapshot?.avatar || null,
+          photo: pro.photo || obj.proSnapshot?.photo || null,
+          city: pro.city || obj.proSnapshot?.city || null,
+          proTitle: pro.proTitle || obj.proSnapshot?.proTitle || null,
+        };
+      }
+      return obj;
+    });
+
+    return res.json({ success: true, data: enrichedOrders, pagination: { page: Number(page), limit: Number(limit), total } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
@@ -250,8 +343,8 @@ exports.deliverOrder = async (req, res) => {
     const service = await ProService.findOne({ _id: order.service, pro: proId });
     if (!service) return res.status(403).json({ success: false, message: 'Non autorisé' });
 
-    const allowedStatuses = ['accepted_by_pro', 'in_progress'];
-    if (!allowedStatuses.includes(order.status)) {
+    const blockedStatuses = ['delivered_by_pro', 'confirmed_by_buyer', 'payout_released', 'cancelled', 'refunded'];
+    if (blockedStatuses.includes(order.status)) {
       return res.status(400).json({ success: false, message: `Statut actuel (${order.status}) ne permet pas la livraison` });
     }
 

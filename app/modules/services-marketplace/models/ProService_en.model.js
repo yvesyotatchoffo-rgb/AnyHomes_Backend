@@ -17,6 +17,7 @@ const ProServiceEnSchema = new mongoose.Schema({
   delivery_time: { type: String },
   imageUrls: [{ type: String }],
   status: { type: String, enum: ['draft', 'pending_validation', 'active', 'inactive', 'deleted'], default: 'draft' },
+  is_free: { type: Boolean, default: false },
   isFeatured: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
 }, { timestamps: true });
