@@ -22,8 +22,48 @@ module.exports = {
         userLat,
         userLng,
         local_type,
-        loggedInUser
+        loggedInUser,
+        q,
+        city,
+        postal_code,
+        postalCode,
+        address,
+        search
       } = req.query;
+
+      // Priority: use explicit postalCode param if provided by frontend (most reliable)
+      // Check for both undefined and empty string cases
+      if (postalCode && postalCode?.length > 0 && !postal_code) {
+        postal_code = postalCode;
+      }
+      
+      console.log('🔍 [TransactionController] Received params:', { 
+        postalCode, 
+        postal_code, 
+        userLat, 
+        userLng, 
+        maxDistance,
+        search,
+        address
+      });
+      
+      // 'search' is the frontend param; treat it as 'address' when address is not set
+      let addressFilter = address || search;
+      
+      // If postal_code is already set (from postalCode param), never apply addressFilter
+      // (it would cause a regex on address_channel_name and return 0 results)
+      if (postal_code) {
+        addressFilter = null;
+      }
+      
+      // Smart postal code detection: if search term looks like a French postal code (5 digits),
+      // treat it as exact postal_code match instead of address regex (MUCH faster)
+      if (addressFilter && !postal_code && /^\d{5}$/.test(addressFilter)) {
+        postal_code = addressFilter;
+        addressFilter = null; // Don't apply regex filter
+      }
+      
+      console.log('🔍 [TransactionController] After processing - postal_code:', postal_code, 'addressFilter:', addressFilter);
 
       var query = {};
 
@@ -48,12 +88,39 @@ module.exports = {
         var order = sortBy.split(" ");
         var field = order[0];
         var sortType = order[1];
+        sortquery[field] = sortType === "asc" ? 1 : -1;
+      } else {
+        // Default sort by _id (always indexed, fast on any collection size)
+        sortquery._id = -1;
       }
-      sortquery[field ? field : "createdAt"] = sortType === "asc" ? 1 : -1;
+      const after = req.query.after || null; // cursor-based pagination (after = last _id from previous page)
 
       if (number_of_main_pieces) {
         const arr = number_of_main_pieces.split(',').map(String);
         query.number_of_main_pieces = { $in: arr };
+      }
+      // free-text q: search address, city, postal code (case-insensitive)
+      if (q) {
+        // prefer text index search when available (faster on large collections)
+        query.$text = { $search: q };
+        // when using text search, if sort not provided, sort by text score
+        if (!sortBy) {
+          sortquery = { score: { $meta: "textScore" } };
+        }
+      }
+
+      if (city) {
+        query.community_name = { $regex: city, $options: 'i' };
+      }
+
+      if (postal_code) {
+        query.postal_code = String(postal_code);
+      }
+
+      // Only apply address filter if we DON'T have geographic coordinates
+      // (geographic search already filters by location via geoNear)
+      if (addressFilter && !(userLat && userLng)) {
+        query.address_channel_name = { $regex: addressFilter, $options: 'i' };
       }
       if (year) {
         const arr = year.split(',').map(Number);
@@ -78,7 +145,10 @@ module.exports = {
 
       let pipeline = [];
 
-      if (userLat && userLng) {
+      // IMPORTANT: If we have a postal_code filter, DON'T apply geo search
+      // (geo search with small radius would return 0 results for a postal code)
+      // Postal code search is already handled in the $match stage below
+      if (userLat && userLng && !postal_code) {
         pipeline.push({
           $geoNear: {
             near: { type: "Point", coordinates: [Number(userLng), Number(userLat)] },
@@ -89,14 +159,12 @@ module.exports = {
         });
       }
 
-      pipeline.push(
-        { $match: query },
-        { $sort: sortquery }
-      );
+      // IMPORTANT: Put $match BEFORE $facet but NOT $sort (sort goes inside $facet for performance)
+      pipeline.push({ $match: query });
 
-      const projectStage = {
-        $project: {
-          id: "$_id",
+      const projectFields = {
+        // include id and core fields
+        id: "$_id",
           id_mutation: 1,
           mutation_date: 1,
           provision_number: 1,
@@ -141,41 +209,77 @@ module.exports = {
           createdAt: 1,
           // updatedAt: 1,
           // distance: 1
-        }
       };
 
-      const pageNum = Number(page) || 1;
-      const countNum = Number(count) || 12;
-
-      // ✅ Use $facet to get data + total count in ONE single DB call
-      // instead of two separate queries (aggregate + countDocuments)
-      pipeline.push({
-        $facet: {
-          data: [
-            { $skip: (pageNum - 1) * countNum },
-            { $limit: countNum },
-            projectStage
-          ],
-          // ✅ $count inside facet stops counting at the matching docs
-          // and doesn't scan the whole collection like countDocuments
-          totalCount: [
-            { $count: "count" }
-          ]
-        }
-      });
-
-      // ✅ Use hint to force MongoDB to use the createdAt index for default sort
-      // prevents a full collection scan on 3 crore records
-      const aggregateOptions = {};
-      if (!userLat && !userLng) {
-        // Only apply hint when no $geoNear (geoNear must be first stage and controls index)
-        aggregateOptions.hint = { createdAt: -1 };
+      // include text score only when a text search was performed
+      if (q) {
+        projectFields.score = { $meta: "textScore" };
       }
 
-      const [result] = await Transaction.aggregate(pipeline, aggregateOptions);
+      const projectStage = { $project: projectFields };
 
-      const data = result?.data || [];
-      const rawTotal = result?.totalCount?.[0]?.count || 0;
+      const MAX_PAGES = 100;
+      const PAGE_SIZE = 30;
+      // Cap page and count: never show more than MAX_PAGES * PAGE_SIZE results
+      const pageNum = Math.min(Number(page) || 1, MAX_PAGES);
+      const countNum = PAGE_SIZE; // always 30 per page regardless of what frontend sends
+
+      // Fast path: no filters and no geo → use estimatedDocumentCount + simple skip/limit
+      // This avoids a full-collection $count scan (which takes ~60s on 5M+ docs)
+      const hasFilters = !!(
+        userLat || userLng || q || city || postal_code || addressFilter ||
+        year || minPrice || maxPrice || minSurface || maxSurface ||
+        number_of_main_pieces || status || sortBy
+      );
+
+      let data, rawTotal;
+
+      if (!hasFilters) {
+        // Ultra-fast unfiltered path
+        rawTotal = await Transaction.estimatedDocumentCount();
+        const docs = await Transaction.aggregate([
+          { $sort: sortquery },
+          { $skip: (pageNum - 1) * countNum },
+          { $limit: countNum },
+          { $project: projectFields }
+        ]);
+        data = docs;
+      } else {
+        // Filtered path: use $facet for data + count in one call
+        // NOTE: $sort goes INSIDE $facet for performance (only sorts paginated results, not all matching docs)
+        if (after) {
+          try {
+            const op = sortType === 'asc' ? '$gt' : '$lt';
+            query._id = { [op]: mongoose.Types.ObjectId(after) };
+          } catch (e) { /* ignore invalid ObjectId */ }
+          pipeline.push({
+            $facet: {
+              data: [
+                { $sort: sortquery },
+                { $limit: countNum },
+                projectStage
+              ],
+              totalCount: [{ $count: 'count' }]
+            }
+          });
+        } else {
+          pipeline.push({
+            $facet: {
+              data: [
+                { $sort: sortquery },
+                { $skip: (pageNum - 1) * countNum },
+                { $limit: countNum },
+                projectStage
+              ],
+              totalCount: [{ $count: 'count' }]
+            }
+          });
+        }
+
+        const [result] = await Transaction.aggregate(pipeline);
+        data = result?.data || [];
+        rawTotal = result?.totalCount?.[0]?.count || 0;
+      }
 
       // ✅ Keep original plan-based total cap logic unchanged
       let totalCount = rawTotal;
@@ -187,6 +291,7 @@ module.exports = {
         success: true,
         data,
         total: totalCount,
+        nextCursor: data.length ? data[data.length - 1]?.id : null,
       });
 
     } catch (error) {

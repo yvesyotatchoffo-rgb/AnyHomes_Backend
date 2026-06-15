@@ -63,6 +63,22 @@ app.use("/", require("./app/middleware/responseTimeMiddleware"));
 
 const db = require("./app/models");
 
+// initialize queue UI (bull-board) if redis available
+try {
+  const { router: bullBoardRouter, setQueues, BullMQAdapter } = require('bull-board');
+  const { queue } = require('./app/queues/importQueue');
+
+  if (queue) {
+    setQueues([new BullMQAdapter(queue)]);
+    app.use('/admin/queues', bullBoardRouter);
+    console.log('Bull-board UI mounted at /admin/queues');
+  } else {
+    console.warn('BullMQ queue not available, bull-board not mounted');
+  }
+} catch (e) {
+  console.warn('Bull-board not initialized:', e.message);
+}
+
 let routes = require("./app/routes");
 
 const { resetDailyMessageLimit } = require("./app/cron/message.cron");

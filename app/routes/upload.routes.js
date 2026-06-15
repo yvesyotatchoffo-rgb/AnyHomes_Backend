@@ -16,6 +16,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require("../models/index");
 const { error } = require("console");
 const BuildingPermits = require("../models/buildingPermit.model");
+const { importFromDirectory, mapRowToDoc, defaultKeyMap } = require('../utils/pastTransactionsImporter');
 // const { pastTransaction } = require("../models/past"); // Assuming your model is located in `models`
 function createGeoLocation(longitude, latitude) {
   if (!isNaN(longitude) && !isNaN(latitude)) {
@@ -325,48 +326,8 @@ router.post("/importPastTransactions", uploadExcel.single("file"), async (req, r
     let isInserting = false; // ✅ prevent parallel inserts
 
 
-    const keyMap = {
-      id_mutation: "id_mutation",
-      date_mutation: "mutation_date",
-      numero_disposition: "provision_number",
-      nature_mutation: "nature_mutation",
-      valeur_fonciere: "land_value",
-      adresse_numero: "address_number",
-      adresse_suffixe: "address_suffix",
-      adresse_nom_voie: "address_channel_name",
-      adresse_code_voie: "channel_code_address",
-      code_postal: "postal_code",
-      code_commune: "community_code",
-      nom_commune: "community_name",
-      code_departement: "department_code",
-      ancien_code_commune: "old_community_code",
-      ancien_nom_commune: "old_community_name",
-      id_parcelle: "plot_id",
-      ancien_id_parcelle: "old_plot_id",
-      numero_volume: "volume_number",
-      lot1_numero: "lot1_number",
-      lot1_surface_carrez: "lot1_surface_carrez",
-      lot2_numero: "lot2_number",
-      lot2_surface_carrez: "lot2_surface_carrez",
-      lot3_numero: "lot3_number",
-      lot3_surface_carrez: "lot3_surface_carrez",
-      lot4_numero: "lot4_number",
-      lot4_surface_carrez: "lot4_surface_carrez",
-      lot5_numero: "lot5_number",
-      lot5_surface_carrez: "lot5_surface_carrez",
-      nombre_lots: "number_lots",
-      code_type_local: "local_type_code",
-      type_local: "local_type",
-      surface_reelle_bati: "real_built_surface",
-      nombre_pieces_principales: "number_of_main_pieces",
-      code_nature_culture: "code_nature_culture",
-      nature_culture: "nature_culture",
-      code_nature_culture_speciale: "code_nature_culture_special",
-      nature_culture_speciale: "nature_culture_special",
-      surface_terrain: "land_surface",
-      longitude: "longitude",
-      latitude: "latitude",
-    };
+    // Reuse centralized mapping from importer to keep API and CLI aligned
+    const keyMap = defaultKeyMap;
 
     function normalizeDate(value) {
       if (value == null) return null;
@@ -398,33 +359,15 @@ router.post("/importPastTransactions", uploadExcel.single("file"), async (req, r
           return acc;
         }, {});
 
-        const mappedRow = {};
+        // normalize keys to lowercase trimmed
+        const lower = Object.keys(row).reduce((acc, key) => {
+          acc[key.trim().toLowerCase()] = row[key];
+          return acc;
+        }, {});
 
-        for (const [csvKey, modelKey] of Object.entries(keyMap)) {
-          let value = row[csvKey] !== undefined ? row[csvKey] : null;
-
-          if (modelKey === "mutation_date" && value) {
-            value = normalizeDate(value);
-          } else {
-            value = value !== null ? String(value) : null;
-          }
-
-          mappedRow[modelKey] = value;
-        }
-
-        mappedRow.year = 2016;
-        mappedRow.is_imported = "Y";
-
-        if (mappedRow.latitude && mappedRow.longitude) {
-          const lat = parseFloat(mappedRow.latitude);
-          const lng = parseFloat(mappedRow.longitude);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            mappedRow.location = {
-              type: "Point",
-              coordinates: [lng, lat],
-            };
-          }
-        }
+        const mappedRow = mapRowToDoc(lower, keyMap);
+        // For this upload route we may not have year detection; keep existing behavior if missing
+        if (!mappedRow.year) mappedRow.year = 2016;
 
         successImport++;
         data.push(mappedRow);
@@ -848,12 +791,211 @@ router.post("/importSchools", uploadSchool.single("file"), async (req, res) => {
   }
 });
 
+// Admin: trigger import from a local server path (process runs async)
+let queue = null;
+let jobStore = {}; // in-memory fallback job store when BullMQ not available
+try {
+  const qmod = require('../queues/importQueue');
+  queue = qmod.queue;
+} catch (e) {
+  console.warn('BullMQ queue not available, falling back to in-process imports');
+}
+
+router.post('/admin/importFromLocal', async (req, res) => {
+  try {
+    const { path: localPath, years, batchSize } = req.body || {};
+    if (!localPath || !Array.isArray(years) || years.length === 0) {
+      return res.status(400).json({ success: false, message: 'Provide localPath and years[] in body' });
+    }
+
+    if (queue) {
+      // enqueue job in BullMQ
+      const job = await queue.add('import', { localPath, years, batchSize }, { attempts: 3, backoff: { type: 'exponential', delay: 60000 } });
+
+      // persist initial job record in MongoDB for audit & UI
+      try {
+        if (db && db.importJobs) {
+          await db.importJobs.create({ jobId: String(job.id), queueName: 'pastTransactionsImport', status: 'waiting', params: { localPath, years, batchSize } });
+        }
+      } catch (e) {
+        console.error('Failed to persist importJob on enqueue:', e && e.message);
+      }
+
+      return res.json({ success: true, jobId: job.id, message: 'Import job enqueued' });
+    }
+
+    // Fallback: run import in-process and keep progress in memory
+    const jobId = uuidv4();
+    jobStore[jobId] = { state: 'running', progress: null, attemptsMade: 0, returnvalue: null };
+
+    (async () => {
+      console.log(`[importJob ${jobId}] starting fallback import from ${localPath} years=${years.join(',')}`);
+      try {
+        const resImport = await importFromDirectory(localPath, years, {
+          batchSize: batchSize || 5000,
+          onProgress: (info) => {
+            jobStore[jobId].progress = info;
+          }
+        });
+        jobStore[jobId].state = 'completed';
+        jobStore[jobId].returnvalue = resImport;
+        console.log(`[importJob ${jobId}] finished`, resImport);
+      } catch (err) {
+        console.error(`[importJob ${jobId}] error`, err.message);
+        jobStore[jobId].state = 'failed';
+        jobStore[jobId].returnvalue = { error: err.message };
+      }
+    })();
+
+    return res.json({ success: true, jobId, message: 'Import started (fallback in-process)' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Admin: get import job status/progress (supports BullMQ job or fallback in-memory jobStore)
+router.get('/admin/importStatus/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    if (queue) {
+      const job = await queue.getJob(jobId);
+      if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
+
+      const state = await job.getState();
+      // Support both Bull (v3) and BullMQ (v4) job APIs for progress
+      let progress = null;
+      try {
+        if (typeof job.progress === 'function') {
+          // Bull v3
+          progress = await job.progress();
+        } else if (typeof job.asJSON === 'function') {
+          const j = await job.asJSON();
+          progress = j.progress;
+        }
+      } catch (e) {
+        // best-effort: leave progress null on error
+        console.warn('Failed to read job progress', e && e.message);
+      }
+
+      // attempts and return value
+      let attemptsMade = job.attemptsMade || 0;
+      let returnvalue = null;
+      try {
+        if (typeof job.returnvalue !== 'undefined') returnvalue = job.returnvalue;
+        else if (typeof job.asJSON === 'function') {
+          const j = await job.asJSON();
+          returnvalue = j.returnvalue;
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      return res.json({ success: true, jobId, state, progress, attemptsMade, returnvalue });
+    }
+
+    const j = jobStore[jobId];
+    if (!j) return res.status(404).json({ success: false, message: 'Job not found' });
+    return res.json({ success: true, jobId, state: j.state, progress: j.progress, attemptsMade: j.attemptsMade, returnvalue: j.returnvalue });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Admin: list import jobs (most recent first)
+router.get('/admin/importJobs', async (req, res) => {
+  try {
+    const limit = safeParseInt(req.query.limit) || 50;
+    if (!db || !db.importJobs) return res.status(500).json({ success: false, message: 'ImportJobs model unavailable' });
+    const jobs = await db.importJobs.find({}).sort({ createdAt: -1 }).limit(limit).lean();
+    return res.json({ success: true, count: jobs.length, jobs });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Admin: retry a previously recorded import job
+router.post('/admin/importJobs/:jobId/retry', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    if (!db || !db.importJobs) return res.status(500).json({ success: false, message: 'ImportJobs model unavailable' });
+
+    const original = await db.importJobs.findOne({ jobId: String(jobId) }).lean();
+    if (!original) return res.status(404).json({ success: false, message: 'Original job not found' });
+
+    const params = original.params || {};
+
+    if (queue) {
+      const newJob = await queue.add('import', { localPath: params.localPath, years: params.years, batchSize: params.batchSize }, { attempts: 3, backoff: { type: 'exponential', delay: 60000 } });
+      try {
+        await db.importJobs.create({ jobId: String(newJob.id), queueName: 'pastTransactionsImport', status: 'waiting', params, retriesFrom: String(jobId) });
+      } catch (e) {
+        console.error('Failed to persist retry importJob:', e && e.message);
+      }
+      return res.json({ success: true, message: 'Retry enqueued', jobId: newJob.id });
+    }
+
+    // fallback: run in-process and persist job document
+    const fallbackId = uuidv4();
+    try {
+      await db.importJobs.create({ jobId: fallbackId, queueName: 'fallback', status: 'running', params, retriesFrom: String(jobId) });
+    } catch (e) {
+      console.error('Failed to create fallback importJob record:', e && e.message);
+    }
+
+    (async () => {
+      try {
+        const resImport = await importFromDirectory(params.localPath, params.years, {
+          batchSize: params.batchSize || 5000,
+          onProgress: async (info) => {
+            try {
+              await db.importJobs.findOneAndUpdate({ jobId: fallbackId }, { $set: { progress: info } }).exec();
+            } catch (e) {}
+          }
+        });
+        await db.importJobs.findOneAndUpdate({ jobId: fallbackId }, { $set: { status: 'completed', result: resImport } }).exec();
+      } catch (err) {
+        console.error('Fallback retry job error:', err && err.message);
+        await db.importJobs.findOneAndUpdate({ jobId: fallbackId }, { $set: { status: 'failed', error: { message: err && err.message } } }).exec();
+      }
+    })();
+
+    return res.json({ success: true, message: 'Retry started (fallback)', jobId: fallbackId });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
 
 function safeParseInt(value) {
   const parsed = parseInt(value);
   return isNaN(parsed) ? null : parsed;
 }
+
+// Admin: geo-search endpoint for UI
+router.get('/admin/geoSearch', async (req, res) => {
+  try {
+    const lng = parseFloat(req.query.lng);
+    const lat = parseFloat(req.query.lat);
+    const maxDistance = parseInt(req.query.maxDistance) || 500; // meters
+    const limit = safeParseInt(req.query.limit) || 100;
+    const year = req.query.year ? safeParseInt(req.query.year) : null;
+
+    if (!isFinite(lng) || !isFinite(lat)) return res.status(400).json({ success: false, message: 'Provide numeric lng and lat query params' });
+    if (!db || !db.pastTransaction) return res.status(500).json({ success: false, message: 'pastTransaction model unavailable' });
+
+    const query = { location: { $near: { $geometry: { type: 'Point', coordinates: [lng, lat] }, $maxDistance: maxDistance } } };
+    if (year) query.year = year;
+
+    const projection = { id_mutation: 1, mutation_date: 1, year: 1, location: 1, land_value_num: 1 };
+    const results = await db.pastTransaction.find(query).limit(limit).select(projection).lean();
+
+    return res.json({ success: true, count: results.length, results });
+  } catch (err) {
+    console.error('geoSearch error:', err && err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 router.post("/importReferencePrice", uploadEstimationPrice.single("file"), async (req, res) => {
   if (!req.file || !req.file.buffer) {

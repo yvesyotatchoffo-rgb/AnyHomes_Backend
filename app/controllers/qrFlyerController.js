@@ -25,11 +25,14 @@ function getPhotoUrl(photo) {
   if (photo.url) {
     return photo.url;
   }
+  if (photo.file) {
+    return `${BACK_WEB_URL}/img/${photo.file}`;
+  }
   if (photo.fileName) {
-    return `${BACK_WEB_URL}/uploads/${photo.fileName}`;
+    return `${BACK_WEB_URL}/img/${photo.fileName}`;
   }
   if (photo.originalname) {
-    return `${BACK_WEB_URL}/uploads/${photo.originalname}`;
+    return `${BACK_WEB_URL}/img/${photo.originalname}`;
   }
   if (photo.path) {
     return `${BACK_WEB_URL}/${photo.path}`;
@@ -39,6 +42,7 @@ function getPhotoUrl(photo) {
 
 function getPhotoIdentifier(photo, index) {
   if (!photo) return String(index);
+  if (photo.file) return photo.file;
   if (photo.fileName) return photo.fileName;
   if (photo.originalname) return photo.originalname;
   if (photo.id) return String(photo.id);

@@ -43,8 +43,9 @@ const createOrderSchema = {
   body: {
     serviceId: v.mongoId('Le service'),
     quantity:  v.positiveInt('La quantité'),
-    property_id: v.mongoId('Le bien'),
-    propertyId: v.mongoId('Le bien'),
+    // property_id / propertyId are optional — only validate format if provided
+    property_id: (val) => (!val || val === '' ? null : v.mongoId('Le bien')(val)),
+    propertyId:  (val) => (!val || val === '' ? null : v.mongoId('Le bien')(val)),
   },
 };
 

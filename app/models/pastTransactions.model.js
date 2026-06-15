@@ -141,16 +141,16 @@ module.exports = (mongoose) => {
 
       //shadow fields
       land_value: String,
-      land_value_num: { type: Number, index: true },
+      land_value_num: Number,
 
       lot1_surface_carrez: String,
-      lot1_surface_carrez_num: { type: Number, index: true },
+      lot1_surface_carrez_num: Number,
 
       real_built_surface: String,
       real_built_surface_num: Number,
 
       number_of_main_pieces: String,
-      number_of_main_pieces_num: { type: Number, index: true },
+      number_of_main_pieces_num: Number,
 
       land_surface: String,
       land_surface_num: Number,

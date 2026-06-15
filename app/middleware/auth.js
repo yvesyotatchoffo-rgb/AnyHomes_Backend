@@ -5,11 +5,17 @@ const db = require("../models");
 const Users = db.users;
 const unprotectedPrefixes = [
   "/marketplace/pro-stats/",
+  "/marketplace/favorite-pros",
 ];
 
 module.exports = async (req, res, next) => {
   const url = req.url.split("?");
   if (unprotectedRoutes.includes(url[0])) {
+    next();
+    return;
+  }
+  // Allow access to Bull Board UI in non-production for local debugging
+  if (process.env.NODE_ENV !== 'production' && url[0].startsWith('/admin/queues')) {
     next();
     return;
   }
@@ -27,14 +33,40 @@ module.exports = async (req, res, next) => {
     req.url.split("?")[0].startsWith("/chat");
 
   const guestUser = {
-    _id: "guest-user-000",
-    id: "guest-user-000",
+    // Use a 24-char hex string so Mongoose cast to ObjectId succeeds
+    _id: "000000000000000000000000",
+    id: "000000000000000000000000",
     fullName: "Bookaroo Guest",
     email: "guest@bookaroo.local",
     role: "guest",
     customerRole: { name: "Guest" },
     isGuest: true,
   };
+
+  // Normalize any incoming query/body/params/header values that may contain
+  // the old guest placeholder string to the 24-char hex guest id so Mongoose
+  // casts don't throw.
+  const GUEST_PLACEHOLDER = 'guest-user-000';
+  const GUEST_ID_HEX = guestUser._id;
+  const normalizeValue = (v) => (v === GUEST_PLACEHOLDER ? GUEST_ID_HEX : v);
+  try {
+    if (req.query) {
+      Object.keys(req.query).forEach(k => { req.query[k] = normalizeValue(req.query[k]); });
+    }
+    if (req.params) {
+      Object.keys(req.params).forEach(k => { req.params[k] = normalizeValue(req.params[k]); });
+    }
+    if (req.body && typeof req.body === 'object') {
+      Object.keys(req.body).forEach(k => { req.body[k] = normalizeValue(req.body[k]); });
+    }
+    if (req.headers) {
+      ['loggedinuser','userid','userId','loggedInUser'].forEach(h => {
+        if (req.headers[h] === GUEST_PLACEHOLDER) req.headers[h] = GUEST_ID_HEX;
+      });
+    }
+  } catch (e) {
+    // best-effort normalization; ignore failures
+  }
 
   if (req.headers && req.headers.authorization) {
     try {
@@ -102,6 +134,17 @@ module.exports = async (req, res, next) => {
       },
     });
   }
+  // Ensure any identity that still contains the old guest placeholder string
+  // is normalized to the 24-char hex guest id so Mongoose casts succeed.
+  try {
+    if (req.identity) {
+      if (req.identity._id === GUEST_PLACEHOLDER) req.identity._id = GUEST_ID_HEX;
+      if (req.identity.id === GUEST_PLACEHOLDER) req.identity.id = GUEST_ID_HEX;
+    }
+  } catch (e) {
+    // best-effort, ignore
+  }
+
   next();
   return;
 };

@@ -1,12 +1,23 @@
 const db = require('../models');
 
+const BACK_WEB_URL = process.env.BACK_WEB_URL || `http://localhost:${process.env.PORT || 6089}`;
 const defaultCover = '/assets/img/dashboard/attractivity/attractivity-1.jpg';
+
+// Résout l'URL d'une image de propriété à partir d'un document images[]
+const resolvePropertyCoverUrl = (images) => {
+  if (!Array.isArray(images) || images.length === 0) return null;
+  const img = images[0];
+  if (typeof img === 'string') return img;
+  if (img && img.file) return `${BACK_WEB_URL}/img/${img.file}`;
+  if (img && img.fileName) return `${BACK_WEB_URL}/img/${img.fileName}`;
+  return null;
+};
 
 const toPropertyCard = (p) => ({
   propertyId: p._id || p.id,
   property: {
     title: p.propertyTitle || p.title || p.name || '',
-    coverUrl: (p.images && p.images[0]) || p.imageUrl || p.coverUrl || defaultCover,
+    coverUrl: resolvePropertyCoverUrl(p.images) || p.imageUrl || p.coverUrl || defaultCover,
   },
   metrics: {
     views: { value: p.propertyViewerCount || 0, deltaPct: 0 },
@@ -559,7 +570,7 @@ module.exports = {
             name: s.searchLocation || `${s.propertyType || ''} ${s.zipcode || ''}`,
             criteriaLabel: `${s.propertyType || 'Tout'}${s.searchLocation ? ' • ' + s.searchLocation : ''}`,
             newResultsCount: s.searchByCount || 0,
-            previewProperties: preview.map(p => ({ id: p._id, coverUrl: (p.images && p.images[0]) || defaultCover, route: `/property-details?id=${p._id}` })),
+            previewProperties: preview.map(p => ({ id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, route: `/property-details?id=${p._id}` })),
             action: { route: `/properties?searchId=${s._id}` },
           };
         })) : [
@@ -591,7 +602,7 @@ module.exports = {
             label: `Mettre à jour le dossier de ${p.propertyTitle || p.title || 'votre bien'}`,
             role: 'OWNER',
             priority: idx + 1,
-            property: { id: p._id, coverUrl: (p.images && p.images[0]) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
+            property: { id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
             action: { route: `/seller-file?propertyId=${p._id}` },
           });
         });

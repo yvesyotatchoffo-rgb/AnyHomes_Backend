@@ -36,6 +36,7 @@ db.chatcommonoperations = require("./chatcommonoperations.model.js")(mongoose);
 db.location = require("./location.model.js")(mongoose);
 db.alerts = require("./alerts.model.js")(mongoose);
 db.pastTransaction = require("./pastTransactions.model.js")(mongoose);
+db.importJobs = require("./importJob.model.js")(mongoose);
 db.timeline = require("./timeline.model.js")(mongoose);
 db.savesearch = require("./savesearch.model.js")(mongoose);
 db.externalListing = require("./externalListing.model.js")(mongoose);
