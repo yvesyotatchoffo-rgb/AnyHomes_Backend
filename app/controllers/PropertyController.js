@@ -4103,7 +4103,7 @@ module.exports = {
         {
           $count: "count"
         }
-      ]).toArray();
+      ]);
       const messagesCount = uniqueMessengers.length > 0 ? uniqueMessengers[0].count : 0;
 
       // Get visit requests (visit_request events)
