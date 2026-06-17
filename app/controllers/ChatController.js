@@ -6,6 +6,7 @@ const db = require("../models");
 var mongoose = require("mongoose");
 const Emails = require("../Emails/onBoarding");
 const { success } = require('../services/Response');
+const logPropertyActivity = require("../services/propertyActivityLog.service");
 
 const isGuestRequest = (req) => {
   return (
@@ -414,6 +415,9 @@ exports.joinGroup = async (req, res, next) => {
                     property_id: property_id
                 }
             ]);
+
+            // Log contact_owner activity
+            logPropertyActivity(property_id, "contact_owner", { userId: chat_by, label: "Message envoyé au propriétaire" });
 
             let data = {
                 room_id: create_room._id
