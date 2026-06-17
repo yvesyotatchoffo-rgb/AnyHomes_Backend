@@ -4080,41 +4080,18 @@ module.exports = {
         isDeleted: false
       });
 
-      // Get offer sent (interested in property)
-      const offersCount = await db.propertyActivityLog.countDocuments({
-        propertyId: objectId,
-        type: "offer_sent"
-      });
-
-      // Get messages (contact_owner events - unique users)
-      const uniqueMessengers = await db.propertyActivityLog.aggregate([
-        {
-          $match: {
-            propertyId: objectId,
-            type: "contact_owner",
-            userId: { $ne: null }
-          }
-        },
-        {
-          $group: {
-            _id: "$userId"
-          }
-        },
-        {
-          $count: "count"
-        }
-      ]);
-      const messagesCount = uniqueMessengers.length > 0 ? uniqueMessengers[0].count : 0;
-
       // Get visit requests (visit_request events)
       const visitsCount = await db.propertyActivityLog.countDocuments({
         propertyId: objectId,
         type: "visit_request"
       });
 
-      // Calculate interested people
-      // = followers + offers + unique messengers
-      const interestedCount = followersCount + offersCount + messagesCount;
+      // Get interested people from the transaction pipeline
+      // This matches the owner screen counter (totalLeads)
+      const interestedCount = await db.interests.countDocuments({
+        propertyId: objectId,
+        isDeleted: false
+      });
 
       return res.status(200).json({
         success: true,
