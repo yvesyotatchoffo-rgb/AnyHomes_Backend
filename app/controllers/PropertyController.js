@@ -4053,5 +4053,81 @@ module.exports = {
     } catch (error) {
       return handleServerError(res, error, "List Claims");
     }
+  },
+
+  getActivityStats: async (req, res) => {
+    try {
+      const propertyId = req.params.id;
+      if (!propertyId || !mongoose.Types.ObjectId.isValid(propertyId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid property ID required"
+        });
+      }
+
+      const objectId = new mongoose.Types.ObjectId(propertyId);
+
+      // Get views (profile_view events)
+      const viewsCount = await db.propertyActivityLog.countDocuments({
+        propertyId: objectId,
+        type: "profile_view"
+      });
+
+      // Get followers (follow_unfollow entries where follow_unfollow = true)
+      const followersCount = await db.followUnfollow.countDocuments({
+        property_id: objectId,
+        follow_unfollow: true,
+        isDeleted: false
+      });
+
+      // Get offer sent (interested in property)
+      const offersCount = await db.propertyActivityLog.countDocuments({
+        propertyId: objectId,
+        type: "offer_sent"
+      });
+
+      // Get messages (contact_owner events - unique users)
+      const uniqueMessengers = await db.propertyActivityLog.aggregate([
+        {
+          $match: {
+            propertyId: objectId,
+            type: "contact_owner",
+            userId: { $ne: null }
+          }
+        },
+        {
+          $group: {
+            _id: "$userId"
+          }
+        },
+        {
+          $count: "count"
+        }
+      ]).toArray();
+      const messagesCount = uniqueMessengers.length > 0 ? uniqueMessengers[0].count : 0;
+
+      // Get visit requests (visit_request events)
+      const visitsCount = await db.propertyActivityLog.countDocuments({
+        propertyId: objectId,
+        type: "visit_request"
+      });
+
+      // Calculate interested people
+      // = followers + offers + unique messengers
+      const interestedCount = followersCount + offersCount + messagesCount;
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          views: viewsCount,
+          followers: followersCount,
+          interested: interestedCount,
+          visits: visitsCount
+        },
+        message: "Activity stats retrieved successfully"
+      });
+    } catch (error) {
+      return handleServerError(res, error, "Get Activity Stats");
+    }
   }
 }

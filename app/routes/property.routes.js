@@ -5,6 +5,7 @@ var router = require("express").Router();
 
 router.get("/admin/detail/:id", adminAuth, adminProperty.adminDetail);
 router.get("/admin/activity/:id", adminAuth, adminProperty.adminActivity);
+router.get("/activity-stats/:id", property.getActivityStats);
 router.post("/add", property.add);
 router.get("/detail", property.details);
 router.get("/listing", property.listing);
