@@ -1839,8 +1839,11 @@ module.exports = {
             companyLogo: "$companyLogo",
             coverImage: "$coverImage",
             website: "$website",
+            title: "$proTitle",
             tagline: "$tagline",
             about: "$about",
+            isTopAgent: "$isTopAgent",
+            partnerAssignedAt: "$partnerAssignedAt",
             companyContactNumber: "$companyContactNumber",
             companyEmail: "$companyEmail",
             openingHours: "$openingHours",
@@ -1855,6 +1858,28 @@ module.exports = {
             location: "$location",
             planDetails: 1,
           },
+        },
+        {
+          $addFields: {
+            badges: {
+              $concatArrays: [
+                {
+                  $cond: [
+                    { $eq: ["$isTopAgent", true] },
+                    ["topAgent"],
+                    []
+                  ]
+                },
+                {
+                  $cond: [
+                    { $ne: ["$partnerAssignedAt", null] },
+                    ["localPartner"],
+                    []
+                  ]
+                }
+              ]
+            }
+          }
         },
         { $match: query },
         // { $sort: sortquery },

@@ -1115,6 +1115,13 @@ module.exports = {
 
                         const interestObj = interest.toObject();
                     const isRentalInterest = String(interestObj.propertyId?.propertyType || "").toLowerCase() === "rent";
+                    
+                    // Count properties created by this buyer/user
+                    const propertiesCount = await db.property.countDocuments({
+                        addedBy: interest.buyerId._id,
+                        isDeleted: false
+                    });
+                    
                     const buyerScore = interestObj.financingReferenceScore > 0
                         ? interestObj.financingReferenceScore
                         : (interestObj.buyer?.financingReferenceScore > 0
@@ -1139,10 +1146,16 @@ module.exports = {
 
                     const buyerSupportingDocuments = hasBuyerSupportingDocuments(interestObj.buyer);
 
+                    // Count properties created by buyer
+                    const buyerPropertiesCount = await db.property.countDocuments({
+                        addedBy: interestObj.buyerId,
+                        isDeleted: false
+                    });
+
                     return {
                             ...interestObj,
                             property: interest.propertyId,
-                            buyer: interest.buyerId,
+                            buyer: { ...interest.buyerId.toObject(), propertiesOwned: propertiesCount },
                             buyerSupportingDocuments,
                             financingReferenceScore: referenceScore,
                             financingProbability: responseFinancingProbability,
@@ -1990,7 +2003,7 @@ module.exports = {
             })
                 .populate({
                     path: "buyerId",
-                    select: "fullName email image country city image createdAt"
+                    select: "fullName email image country city image createdAt propertiesOwned"
                 })
                 .populate({
                     path: "propertyId",

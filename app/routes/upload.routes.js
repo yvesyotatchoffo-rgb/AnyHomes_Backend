@@ -1066,4 +1066,51 @@ router.post("/importReferencePrice", uploadEstimationPrice.single("file"), async
     });
 });
 
+// Download multiple documents as ZIP
+router.post("/zip-files", async (req, res) => {
+  try {
+    const { files } = req.body;
+    
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ success: false, message: "No files specified" });
+    }
+
+    // Validate file paths to prevent directory traversal
+    const documentDir = path.join(__dirname, "../../public/document");
+    const validFiles = files.filter(file => {
+      const filePath = path.join(documentDir, path.basename(file));
+      return filePath.startsWith(documentDir) && fs.existsSync(filePath);
+    });
+
+    if (validFiles.length === 0) {
+      return res.status(400).json({ success: false, message: "No valid files found" });
+    }
+
+    // Create ZIP archive
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", "attachment; filename=documents.zip");
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    
+    archive.on("error", (err) => {
+      console.error("Archive error:", err);
+      res.status(500).json({ success: false, message: "Error creating archive" });
+    });
+
+    archive.pipe(res);
+
+    // Add files to archive
+    validFiles.forEach(file => {
+      const filePath = path.join(documentDir, path.basename(file));
+      const fileName = path.basename(file);
+      archive.file(filePath, { name: fileName });
+    });
+
+    await archive.finalize();
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;
