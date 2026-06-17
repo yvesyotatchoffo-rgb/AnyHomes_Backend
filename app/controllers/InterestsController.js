@@ -3,6 +3,7 @@ const Emails = require("../Emails/onBoarding");
 const visitInvite = require("../Emails/visitInvite");
 const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
+const logPropertyActivity = require("../services/propertyActivityLog.service");
 
 const buildGuestProspectImage = (req, filename) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
@@ -1463,6 +1464,9 @@ module.exports = {
                 }, {
                     $inc: { visitBookedCount: 1 }
                 })
+
+                // Log visit_request activity
+                logPropertyActivity(propertyId, "visit_request", { userId: interest.buyerId, label: "Visite bookée" });
 
                 if (finalVisitDate && finalVisitDate.date && finalVisitDate.from && finalVisitDate.to) {
                     const updateResult = await db.property.updateOne(
