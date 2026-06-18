@@ -1201,7 +1201,7 @@ module.exports = {
 
     userInterests: async (req, res) => {
         try {
-            const { buyerId, propertyType } = req.query;
+            const { buyerId, propertyType, isCompleted } = req.query;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 10;
             const skip = (page - 1) * limit;
@@ -1213,9 +1213,18 @@ module.exports = {
 
             if (isGuestRequest) {
                 const cards = buildGuestInterestCards(req);
-                const filteredCards = propertyType
+                let filteredCards = propertyType
                     ? cards.filter((card) => card.propertyType === propertyType)
                     : cards;
+                
+                if (isCompleted === 'true' || isCompleted === true) {
+                    filteredCards = filteredCards.filter((card) => 
+                        card.interestStatus === "completed" || 
+                        card.funnelStatus === "confirmation by user" ||
+                        card.funnelStatus === "owner accept the application"
+                    );
+                }
+                
                 const pagedCards = filteredCards.slice(skip, skip + limit);
                 return res.status(200).json({
                     success: true,
@@ -1233,15 +1242,24 @@ module.exports = {
             }
 
             let sorting = { updatedAt: -1 };
+            
+            // Build filter for completed transactions
+            let completedFilter = {};
+            if (isCompleted === 'true' || isCompleted === true) {
+                completedFilter = {
+                    $or: [
+                        { interestStatus: "completed" },
+                        { funnelStatus: "confirmation by user" },
+                        { funnelStatus: "owner accept the application" }
+                    ]
+                };
+            }
 
-            // const funnelStages = [
-            //     "interest received", "invite for a visit", "has to book a visit", "host the visit", "visit hosted",
-            //     "visit review or offer", "visit review received", "submit offer", "offer received", "answer offer",
-            //     "renter application received", "offer refused", "counter offer sent", "answer counter-offer", "apply for the property",
-            //     "application received", "answer application", "application not accepted", "application accepted", "sign contract", "cancelled"
-            // ];
-
-            const findInterests = await db.interests.find({ isDeleted: false, buyerId: buyerId })
+            const findInterests = await db.interests.find({ 
+                isDeleted: false, 
+                buyerId: buyerId,
+                ...completedFilter
+            })
                 .populate({
                     path: "propertyId",
                     match: propertyType ? { propertyType: propertyType } : {},
@@ -1250,7 +1268,7 @@ module.exports = {
                         select: "fullName firstName lastName email city country image createdAt"
                     }
                 })
-                .sort(sorting) // Apply sorting by updatedAt
+                .sort(sorting)
                 .skip(skip)
                 .limit(limit)
                 .lean();
