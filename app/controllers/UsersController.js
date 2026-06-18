@@ -989,8 +989,13 @@ module.exports = {
           data.buyerfileIdenityVerification = false
         }
 
-        if (data.sellerFiles && data.sellerFiles.length === 0) {
-          await db.property.updateMany({ addedBy: data.userId, isDeleted: false }, { identityVerified: false })
+        // Set identityVerified based on seller files presence
+        if (data.sellerFiles) {
+          if (data.sellerFiles.length === 0) {
+            await db.property.updateMany({ addedBy: data.userId, isDeleted: false }, { identityVerified: false })
+          } else if (data.sellerFiles.length > 0) {
+            await db.property.updateMany({ addedBy: data.userId, isDeleted: false }, { identityVerified: true })
+          }
         }
 
         let scoreResult;

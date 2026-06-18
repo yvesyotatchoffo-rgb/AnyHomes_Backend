@@ -62,12 +62,12 @@ module.exports = (agenda, db) => {
     }
   });
 
-  // MoteurImmo sync job
-  try {
-    require("../../cron/moteurimmo.cron.js")(agenda);
-  } catch (err) {
-    console.error('Error loading moteurimmo cron:', err);
-  }
+  // MoteurImmo sync job - DISABLED TO FIX SERVER STARTUP
+  // try {
+  //   require("../../cron/moteurimmo.cron.js")(agenda);
+  // } catch (err) {
+  //   console.error('Error loading moteurimmo cron:', err);
+  // }
   //// agenda to delete the unused records
   //   agenda.define("cleanup-agenda-jobs", async () => {
   //   try {

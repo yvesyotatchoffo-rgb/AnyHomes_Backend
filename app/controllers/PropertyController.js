@@ -2910,6 +2910,12 @@ module.exports = {
         }
       }
 
+      // Set identityVerified based on sellerFiles presence
+      if (updateFields.hasOwnProperty('sellerFiles')) {
+        const hasSellerFiles = updateFields.sellerFiles && Object.keys(updateFields.sellerFiles).length > 0;
+        updateFields.identityVerified = hasSellerFiles;
+      }
+
       const updated = await Property.updateOne({
         _id: propertyId
       }, {
