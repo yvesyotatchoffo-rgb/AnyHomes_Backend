@@ -64,6 +64,7 @@ module.exports = (mongoose) => {
             userPresale: { type: Date},
             ownerPresale: { type: Date},
             review: { type: Object },
+            documentRequested: { type: Boolean, default: false },
             userContract: { type: Date},
             ownerContract:{ type: Date },
             finalContract:{ type: Date },

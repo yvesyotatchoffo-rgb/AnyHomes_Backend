@@ -1158,6 +1158,10 @@ module.exports = {
                             property: interest.propertyId,
                             buyer: { ...interest.buyerId.toObject(), propertiesOwned: propertiesCount },
                             buyerSupportingDocuments,
+                            offerTransactions: await db.interestTransactions.find({
+                                interestId: interestObj._id,
+                                isDeleted: false,
+                            }).sort({ createdAt: 1 }).lean(),
                             financingReferenceScore: referenceScore,
                             financingProbability: responseFinancingProbability,
                             financingReferenceScoreSource: responseFinancingReferenceScoreSource,
@@ -1327,6 +1331,10 @@ module.exports = {
                     return {
                         ...interest,
                         totalLeads: leadsCount,
+                        offerTransactions: await db.interestTransactions.find({
+                            interestId: interest._id,
+                            isDeleted: false,
+                        }).sort({ createdAt: 1 }).lean(),
                         // youtubeUrl: youtubeUrl || null,
                         // title: title || null,
                         funnel: funnel || null,
@@ -1452,6 +1460,12 @@ module.exports = {
                 })
             const ownerName = findProperty.addedBy?.firstName;
             const ownerEmail = findProperty.addedBy?.email;
+            const documentRequested =
+                interest.documentRequested ||
+                interest.funnelStatus === "buyer requested for document" ||
+                interest.funnelStatus === "document send by owner" ||
+                funnelStatus === "buyer requested for document" ||
+                funnelStatus === "document send by owner";
 
             if (funnelStatus === "offer accepted" || funnelStatus === "application accepted") {
                 let updateOffer = await db.property.updateOne({
@@ -1605,6 +1619,14 @@ module.exports = {
 
             const createInterestTransaction = await db.interestTransactions.create(data)
 
+            if (req.body.historyOnly) {
+                return res.status(200).json({
+                    success: true,
+                    message: "History entry created successfully.",
+                    data: createInterestTransaction,
+                });
+            }
+
             const updatedInterest = await db.interests.findByIdAndUpdate(
                 interestId,
                 {
@@ -1641,6 +1663,7 @@ module.exports = {
                     finalSale: finalSale || interest.finalSale,
                     // review: review !== undefined ? review : interest.review,
                     review: review || interest.review,
+                    documentRequested,
                     changeRequestNote: changeRequestNote || interest.changeRequestNote,
                     finalSignSlot: finalSignSlot || interest.finalSignSlot,
                     finalHomeInventorySlot: finalHomeInventorySlot || interest.finalHomeInventorySlot,
