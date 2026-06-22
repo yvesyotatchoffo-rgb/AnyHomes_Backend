@@ -528,7 +528,7 @@ module.exports = {
       }
 
       // --- propertyAttractivity: latest properties owned by user ---
-      const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).limit(6).lean();
+      const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
       const propertyAttractivity = {
         visible: true,
         period: req.query.period || 'day',
@@ -595,16 +595,127 @@ module.exports = {
       const todos = [];
       if (properties.length > 0) {
         // If user is owner, suggest to send seller file or open visit slots
-        properties.slice(0, 3).forEach((p, idx) => {
+        // No limit - all properties are included, frontend handles pagination
+        properties.forEach((p, idx) => {
           todos.push({
             id: `todo-prop-${p._id}`,
             type: 'SEND_SELLER_FILE',
             label: `Mettre à jour le dossier de ${p.propertyTitle || p.title || 'votre bien'}`,
             role: 'OWNER',
             priority: idx + 1,
+            createdAt: p.createdAt,
             property: { id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
             action: { route: `/seller-file?propertyId=${p._id}` },
           });
+        });
+
+        // --- Card 1: Rooms where the last message is from someone else (user hasn't replied) ---
+        try {
+          const userRooms = await db.roommembers.find({ user_id: userId }).select('room_id property_id').lean();
+
+          let replyCount = 0;
+          for (const room of userRooms) {
+            if (replyCount >= 3) break;
+
+            const lastMsg = await db.messages.findOne({ room_id: room.room_id, isDeleted: false })
+              .sort({ createdAt: -1 }).lean();
+
+            if (!lastMsg || lastMsg.sender.toString() === userId.toString()) continue;
+
+            const sender = await db.users.findById(lastMsg.sender).select('firstName lastName').lean();
+            if (!sender) continue;
+
+            // Get property from room or message
+            const propId = room.property_id || lastMsg.property_id;
+            let property = null;
+            if (propId) {
+              property = await db.property.findById(propId).select('type surface city propertyTitle title images').lean();
+            }
+
+            const senderName = `${sender.firstName || ''} ${sender.lastName || ''}`.trim();
+            todos.push({
+              id: `todo-msg-${room.room_id}`,
+              type: 'REPLY_MESSAGE',
+              label: `Répondre au message de ${senderName}`,
+              role: 'BUYER',
+              createdAt: lastMsg.createdAt,
+              property: property ? {
+                id: property._id,
+                coverUrl: resolvePropertyCoverUrl(property.images) || defaultCover,
+                type: property.type || '',
+                surface: property.surface || 0,
+                city: property.city || ''
+              } : null,
+              action: { route: `/chat?roomId=${room.room_id}` },
+            });
+            replyCount++;
+          }
+        } catch (err) {
+          console.error('Error fetching unread messages for dashboard:', err);
+        }
+
+        // --- Card 2: Saved searches with new results ---
+        try {
+          const savedSearches = await db.savesearch.find({ searchBy: userId }).lean();
+          
+          for (const search of savedSearches.slice(0, 3)) {
+            if (search.searchByCount > 0) {
+              todos.push({
+                id: `todo-search-${search._id}`,
+                type: 'NEW_SEARCH_RESULTS',
+                label: 'Consultez les nouveaux biens référencés',
+                role: 'BUYER',
+                priority: properties.length + savedSearches.indexOf(search) + 1,
+                createdAt: search.updatedAt || search.createdAt,
+                searchInfo: {
+                  searchId: search._id,
+                  location: search.searchLocation || search.zipcode || 'Votre région',
+                  newResultsCount: search.searchByCount || 0,
+                },
+                action: { route: `/properties?searchId=${search._id}` },
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching saved searches for dashboard:', err);
+        }
+
+        // --- Card 3: Services pending confirmation ---
+        try {
+          const pendingServices = await db.payments.find({
+            userId: userId,
+            paymentStatus: 'successfull',
+            status: 'active',
+            isDeleted: false
+          }).select('planId amount createdAt').lean();
+
+          for (const service of pendingServices.slice(0, 2)) {
+            const plan = await db.plans.findById(service.planId).select('name').lean();
+            if (plan) {
+              todos.push({
+                id: `todo-service-${service._id}`,
+                type: 'CONFIRM_SERVICE',
+                label: 'Confirmez la réalisation du service',
+                role: 'OWNER',
+                priority: properties.length + pendingServices.indexOf(service) + 1,
+                createdAt: service.createdAt,
+                serviceInfo: {
+                  serviceId: service._id,
+                  serviceName: plan.name || 'Service acheté',
+                },
+                action: { route: `/marketplace/orders?serviceId=${service._id}` },
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching pending services for dashboard:', err);
+        }
+
+        // Sort todos by createdAt (most recent first)
+        todos.sort((a, b) => {
+          const dateA = a.createdAt || new Date(0);
+          const dateB = b.createdAt || new Date(0);
+          return new Date(dateB) - new Date(dateA);
         });
       } else {
         // If no properties, provide the frontend mock todo items so backend is authoritative

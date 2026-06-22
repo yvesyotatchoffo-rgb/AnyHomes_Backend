@@ -4,7 +4,7 @@ module.exports = (mongooseInstance) => {
   const Schema = mongooseInstance.Schema;
   const schema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: 'users', required: true, unique: true },
-    profile: { type: String, enum: ['owner','buyer','professional'], default: 'owner' },
+    profile: { type: String, enum: ['owner','searcher','buyer','professional'], default: 'owner' },
     objective: { type: String, default: 'sell' },
     completions: { type: Object, default: {} },
   }, { timestamps: true });

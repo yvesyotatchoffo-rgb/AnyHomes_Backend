@@ -10,15 +10,18 @@ const DEFAULT = {
 
 // Map persisted signupObjective (French labels) to onboarding profile/objective
 const SIGNUP_OBJECTIVE_MAP = {
-  Acheter: { profile: 'buyer', objective: 'active_buy' },
-  Louer: { profile: 'buyer', objective: 'active_rent' },
-  'Planifier mon projet': { profile: 'buyer', objective: 'passive' },
-  'Opportunités hors marché': { profile: 'buyer', objective: 'active_buy' },
+  Acheter: { profile: 'searcher', objective: 'active_buy' },
+  Louer: { profile: 'searcher', objective: 'active_rent' },
+  'Planifier mon projet': { profile: 'searcher', objective: 'passive' },
+  'Opportunités hors marché': { profile: 'searcher', objective: 'active_buy' },
   'Vendre ma propriété': { profile: 'owner', objective: 'sell' },
   'Louer ma propriété': { profile: 'owner', objective: 'rent' },
   'Évaluer ma propriété': { profile: 'owner', objective: 'increase_value' },
   'Préparer une vente future': { profile: 'owner', objective: 'sell' },
 };
+
+// Normalise legacy 'buyer' profile (stored before the 'searcher' rename) to 'searcher'.
+const normaliseProfile = (profile) => (profile === 'buyer' ? 'searcher' : profile);
 
 const ONBOARDING_ACTIONS_BY_CONFIG = {
   owner_sell: [
@@ -46,7 +49,7 @@ const ONBOARDING_ACTIONS_BY_CONFIG = {
     'get_personalized_advice',
     'peer_estimation',
   ],
-  buyer_active_buy: [
+  searcher_active_buy: [
     'compute_financial_score_buy',
     'search_property_buy',
     'get_targeted_help',
@@ -56,7 +59,7 @@ const ONBOARDING_ACTIONS_BY_CONFIG = {
     'peer_estimation',
     'find_professional',
   ],
-  buyer_active_rent: [
+  searcher_active_rent: [
     'compute_financial_score_rent',
     'search_property_rent',
     'get_targeted_help',
@@ -66,7 +69,7 @@ const ONBOARDING_ACTIONS_BY_CONFIG = {
     'peer_estimation',
     'find_professional',
   ],
-  buyer_passive: [
+  searcher_passive: [
     'compute_financial_score_passive',
     'browse_property_directory',
     'publish_property_directory',
@@ -94,6 +97,7 @@ module.exports = {
   getState: async (req, res) => {
     try {
       const userId = req.identity?.id || req.query.userId;
+      console.log('[ONBOARDING.getState] userId:', userId, 'type:', typeof userId, 'isObjectId:', mongoose.Types.ObjectId.isValid(userId));
       if (!userId) return res.status(200).json({ success: true, data: DEFAULT });
 
       if (!mongoose.isValidObjectId(userId)) return res.status(200).json({ success: true, data: DEFAULT });
@@ -109,7 +113,7 @@ module.exports = {
             if (mapped) {
               const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
               const created = await Onboarding.create({ userId: uid, profile: mapped.profile, objective: mapped.objective, completions: {} });
-              return res.status(200).json({ success: true, data: created });
+              return res.status(200).json({ success: true, data: { ...created.toObject ? created.toObject() : created, profile: normaliseProfile(created.profile) } });
             }
           }
         } catch (e) {
@@ -117,7 +121,84 @@ module.exports = {
         }
         return res.status(200).json({ success: true, data: DEFAULT });
       }
-      return res.status(200).json({ success: true, data: rec });
+      
+      // Auto-complete 'publish_property_directory' if user has any directory property
+      try {
+        const directoryPropertiesCount = await db.property.countDocuments({
+          addedBy: new mongoose.Types.ObjectId(userId),
+          propertyType: 'directory'
+        });
+        if (directoryPropertiesCount > 0) {
+          const completions = { ...(rec.completions || {}) };
+          completions['publish_property_directory'] = 'done';
+          rec = { ...rec, completions };
+        }
+      } catch (e) {
+        console.error('Onboarding.getState property check error', e);
+      }
+
+      // Auto-complete 'put_property_for_sale' if user has any sale property
+      try {
+        const salePropertiesCount = await db.property.countDocuments({
+          addedBy: new mongoose.Types.ObjectId(userId),
+          propertyType: 'sale'
+        });
+        if (salePropertiesCount > 0) {
+          const completions = { ...(rec.completions || {}) };
+          completions['put_property_for_sale'] = 'done';
+          rec = { ...rec, completions };
+        }
+      } catch (e) {
+        console.error('Onboarding.getState sale check error', e);
+      }
+
+      // Auto-complete 'put_property_for_rent' if user has any rent property
+      try {
+        const rentPropertiesCount = await db.property.countDocuments({
+          addedBy: new mongoose.Types.ObjectId(userId),
+          propertyType: 'rent'
+        });
+        if (rentPropertiesCount > 0) {
+          const completions = { ...(rec.completions || {}) };
+          completions['put_property_for_rent'] = 'done';
+          rec = { ...rec, completions };
+        }
+      } catch (e) {
+        console.error('Onboarding.getState rent check error', e);
+      }
+      
+      // Auto-complete 'follow_property' if user is following any property
+      try {
+        const followedPropertiesCount = await db.followUnfollow.countDocuments({
+          user_id: new mongoose.Types.ObjectId(userId),
+          follow_unfollow: true
+        });
+        if (followedPropertiesCount > 0) {
+          const completions = { ...(rec.completions || {}) };
+          completions['follow_property'] = 'done';
+          rec = { ...rec, completions };
+        }
+      } catch (e) {
+        console.error('Onboarding.getState follow check error', e);
+      }
+
+      // Auto-complete 'contact_owner' if user has initiated a property chat
+      try {
+        const contactCount = await db.roommembers.countDocuments({
+          user_id: new mongoose.Types.ObjectId(userId),
+          property_id: { $exists: true }
+        });
+        if (contactCount > 0) {
+          const completions = { ...(rec.completions || {}) };
+          completions['contact_owner_agency'] = 'done';
+          rec = { ...rec, completions };
+        }
+      } catch (e) {
+        console.error('Onboarding.getState contact check error', e);
+      }
+      
+      // Normalise legacy 'buyer' → 'searcher' for clients without a DB migration
+      return res.status(200).json({ success: true, data: { ...rec, profile: normaliseProfile(rec.profile) } });
     } catch (err) {
       console.error('Onboarding.getState', err);
       return res.status(500).json({ success: false, message: err.message });
@@ -188,7 +269,18 @@ module.exports = {
 
       let rec = await Onboarding.findOne({ userId: uid });
       if (!rec) {
-        rec = await Onboarding.create({ userId: uid, profile: 'owner', objective: 'sell', completions: {} });
+        // Determine profile from user's signupObjective when possible, default to 'owner'
+        let defaultProfile = 'owner';
+        let defaultObjective = 'sell';
+        try {
+          const Users = db.users;
+          const user = await Users.findById(uid).lean();
+          if (user && user.signupObjective) {
+            const mapped = SIGNUP_OBJECTIVE_MAP[user.signupObjective];
+            if (mapped) { defaultProfile = mapped.profile; defaultObjective = mapped.objective; }
+          }
+        } catch { /* non-blocking */ }
+        rec = await Onboarding.create({ userId: uid, profile: defaultProfile, objective: defaultObjective, completions: {} });
       }
 
       const completions = { ...(rec.completions || {}) };
