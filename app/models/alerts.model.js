@@ -10,6 +10,7 @@ module.exports = (mongoose) => {
             name: String,
             status: { type: String, default: "active" },
             isDeleted: { type: Boolean, default: false, index: true },
+            lastViewedAt: { type: Date, default: null },
             createdAt: Date,
             updatedAt: Date,
         },

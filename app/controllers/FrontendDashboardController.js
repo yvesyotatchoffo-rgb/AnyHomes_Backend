@@ -1,4 +1,6 @@
 const db = require('../models');
+const ServiceOrderEn = require('../modules/services-marketplace/models/ServiceOrder_en.model');
+const ServiceOrderFr = require('../modules/services-marketplace/models/ServiceOrder_fr.model');
 
 const BACK_WEB_URL = process.env.BACK_WEB_URL || `http://localhost:${process.env.PORT || 6089}`;
 const defaultCover = '/assets/img/dashboard/attractivity/attractivity-1.jpg';
@@ -593,6 +595,49 @@ module.exports = {
 
       // --- todoList: simple heuristics based on user role / properties ---
       const todos = [];
+
+      // --- Card 0: CREATE_RENTER_FILE - Shown to renters who haven't created renter file yet ---
+      if (user.signupObjective === 'Louer' && !user.renterFilesAddedAt) {
+        todos.push({
+          id: `todo-renter-file-${user._id}`,
+          type: 'CREATE_RENTER_FILE',
+          label: 'Créer votre dossier de candidature',
+          role: 'SEARCHER',
+          priority: 0,
+          description: 'Gagnez du temps pour vos candidatures',
+          createdAt: new Date(),
+          action: { route: '/renter-file' },
+        });
+      }
+
+      // --- Card 0b: CREATE_BUYER_FILE - Shown to buyers who haven't created buyer file yet ---
+      if (user.signupObjective === 'Acheter' && !user.buyerFilesAddedAt) {
+        todos.push({
+          id: `todo-buyer-file-${user._id}`,
+          type: 'CREATE_BUYER_FILE',
+          label: 'Créer votre dossier acheteur',
+          role: 'SEARCHER',
+          priority: 0,
+          description: 'Gagnez en crédibilité auprès des vendeurs',
+          createdAt: new Date(),
+          action: { route: '/buyer-file' },
+        });
+      }
+
+      // --- Card 0c: CREATE_SELLER_FILE - Shown to sellers/owners who haven't created seller file yet ---
+      if (user.signupObjective === 'Vendre' && !user.sellerFilesAddedAt && properties.length > 0) {
+        todos.push({
+          id: `todo-seller-file-${user._id}`,
+          type: 'CREATE_SELLER_FILE',
+          label: 'Créer votre dossier de vente',
+          role: 'OWNER',
+          priority: 0,
+          description: 'Vendez plus vite et mieux avec un dossier complet',
+          createdAt: new Date(),
+          action: { route: '/seller-file' },
+        });
+      }
+
       if (properties.length > 0) {
         // If user is owner, suggest to send seller file or open visit slots
         // No limit - all properties are included, frontend handles pagination
@@ -608,6 +653,149 @@ module.exports = {
             action: { route: `/seller-file?propertyId=${p._id}` },
           });
         });
+
+        // --- GROUPE 2: VISITES - Transaction-based visit cards ---
+        try {
+          // Schema uses buyerId (lead) and propertyId (linked to owner via property.addedBy)
+          const propertyIds = properties.map(p => p._id);
+
+          // Interests where user is the lead/searcher
+          const asLeadInterests = await db.interests.find({ buyerId: userId }).lean();
+          // Interests where user is the owner (via their properties)
+          const asOwnerInterests = await db.interests.find({ propertyId: { $in: propertyIds } }).lean();
+
+          const interestEntries = [
+            ...asOwnerInterests.map(i => ({ interest: i, isUserOwner: true })),
+            ...asLeadInterests.map(i => ({ interest: i, isUserOwner: false })),
+          ];
+
+          for (const { interest, isUserOwner } of interestEntries) {
+            const funnelStatus = interest.funnelStatus || '';
+            const otherUserId = isUserOwner ? interest.buyerId : (interest.propertyId ? null : null);
+
+            // Get property details
+            const property = await db.property.findById(interest.propertyId).select('type surface city propertyTitle title images addedBy').lean();
+            if (!property) continue;
+
+            // For owner interests, other user = buyer; for lead interests, other user = property owner
+            const resolvedOtherUserId = isUserOwner ? interest.buyerId : property.addedBy;
+            const otherUser = await db.users.findById(resolvedOtherUserId).select('firstName lastName').lean();
+
+            if (!otherUser) continue;
+            
+            const propertyInfo = {
+              id: property._id,
+              coverUrl: resolvePropertyCoverUrl(property.images) || defaultCover,
+              type: property.type || '',
+              surface: property.surface || 0,
+              city: property.city || ''
+            };
+            
+            const otherUserName = `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim();
+
+            // Card 4: INVITE_TO_VISIT (Owner perspective - status 'interest sent')
+            if (isUserOwner && funnelStatus === 'interest sent') {
+              todos.push({
+                id: `todo-invite-visit-${interest._id}`,
+                type: 'INVITE_TO_VISIT',
+                label: `Inviter ${otherUserName} pour une visite`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 5: BOOKING_VISIT (Lead perspective - status 'invite user for a visit')
+            if (!isUserOwner && funnelStatus === 'invite user for a visit') {
+              todos.push({
+                id: `todo-booking-visit-${interest._id}`,
+                type: 'BOOKING_VISIT',
+                label: `Réserver un créneau de visite`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 6: SUBMIT_REVIEW (Lead perspective - status 'visit hosted')
+            if (!isUserOwner && funnelStatus === 'visit hosted') {
+              todos.push({
+                id: `todo-submit-review-${interest._id}`,
+                type: 'SUBMIT_REVIEW',
+                label: `Évaluer la visite`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // --- GROUPE 3: DOSSIERS VENDEUR ---
+            
+            // Card 7: REQUEST_SELLER_FILE (Lead perspective - after visit hosted)
+            if (!isUserOwner && funnelStatus === 'visit hosted') {
+              todos.push({
+                id: `todo-request-seller-file-${interest._id}`,
+                type: 'REQUEST_SELLER_FILE',
+                label: `Demander le dossier de vente`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 8: DOCUMENTS_RECEIVED (Lead perspective - documents sent by owner, at least one file exists)
+            const hasDocuments = interest.documents && typeof interest.documents === 'object' &&
+              Object.keys(interest.documents).some(k => Array.isArray(interest.documents[k]) && interest.documents[k].length > 0);
+            if (!isUserOwner && interest.documentRequested && hasDocuments) {
+              todos.push({
+                id: `todo-documents-received-${interest._id}`,
+                type: 'DOCUMENTS_RECEIVED',
+                label: `Dossier reçu de ${otherUserName}`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 9: SEND_TRANSACTION_DOCUMENTS (Owner perspective - lead requested documents)
+            if (isUserOwner && interest.documentRequested && (!interest.documents || Object.keys(interest.documents).length === 0)) {
+              todos.push({
+                id: `todo-send-transaction-documents-${interest._id}`,
+                type: 'SEND_TRANSACTION_DOCUMENTS',
+                label: `Envoyer le dossier de vente à ${otherUserName}`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}` },
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching transaction visit cards for dashboard:', err);
+        }
 
         // --- Card 1: Rooms where the last message is from someone else (user hasn't replied) ---
         try {
@@ -680,32 +868,38 @@ module.exports = {
           console.error('Error fetching saved searches for dashboard:', err);
         }
 
-        // --- Card 3: Services pending confirmation ---
+        // --- Card 3: Services pending confirmation (delivered by pro, awaiting buyer confirmation) ---
         try {
-          const pendingServices = await db.payments.find({
-            userId: userId,
-            paymentStatus: 'successfull',
-            status: 'active',
-            isDeleted: false
-          }).select('planId amount createdAt').lean();
+          // Search in both English and French ServiceOrder models
+          const [serviceOrdersEn, serviceOrdersFr] = await Promise.all([
+            ServiceOrderEn.find({
+              buyer: userId,
+              status: 'delivered_by_pro'
+            }).select('serviceSnapshot deliveredAt createdAt').sort({ deliveredAt: -1 }).lean(),
+            ServiceOrderFr.find({
+              buyer: userId,
+              status: 'delivered_by_pro'
+            }).select('serviceSnapshot deliveredAt createdAt').sort({ deliveredAt: -1 }).lean()
+          ]);
 
-          for (const service of pendingServices.slice(0, 2)) {
-            const plan = await db.plans.findById(service.planId).select('name').lean();
-            if (plan) {
-              todos.push({
-                id: `todo-service-${service._id}`,
-                type: 'CONFIRM_SERVICE',
-                label: 'Confirmez la réalisation du service',
-                role: 'OWNER',
-                priority: properties.length + pendingServices.indexOf(service) + 1,
-                createdAt: service.createdAt,
-                serviceInfo: {
-                  serviceId: service._id,
-                  serviceName: plan.name || 'Service acheté',
-                },
-                action: { route: `/marketplace/orders?serviceId=${service._id}` },
-              });
-            }
+          const allServiceOrders = [...serviceOrdersEn, ...serviceOrdersFr].slice(0, 2);
+
+          for (const order of allServiceOrders) {
+            // Service name is stored in serviceSnapshot.title
+            const serviceName = order.serviceSnapshot?.title || 'Service acheté';
+            todos.push({
+              id: `todo-service-${order._id}`,
+              type: 'CONFIRM_SERVICE',
+              label: 'Confirmez la réalisation du service',
+              role: 'BUYER',
+              priority: properties.length + allServiceOrders.indexOf(order) + 1,
+              createdAt: order.deliveredAt || order.createdAt,
+              serviceInfo: {
+                serviceId: order._id,
+                serviceName: serviceName,
+              },
+              action: { route: `/marketplace/orders?serviceId=${order._id}` },
+            });
           }
         } catch (err) {
           console.error('Error fetching pending services for dashboard:', err);
@@ -792,7 +986,11 @@ module.exports = {
       };
 
       const data = {
-        user: { id: user._id, firstName: user.firstName || user.name || '' },
+        user: { 
+          id: user._id, 
+          firstName: user.firstName || user.name || '',
+          signupObjective: user.signupObjective || null,
+        },
         meta: { generatedAt: new Date().toISOString(), period: req.query.period || 'day' },
         sections,
       };

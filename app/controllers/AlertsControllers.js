@@ -703,9 +703,88 @@ module.exports = {
             const sortOrder = req.query.sortOrder === "desc" ? -1 : 1;
             const alerts = await Alerts.find({ user_id: user_id, isDeleted: false }).sort({ [sortBy]: sortOrder });
             let totalAlerts = alerts.length;
-            const alertsWithTotalCount = alerts.map(alert => {
-                return { ...alert._doc, totalcount: alert._doc.totalcount || 0 };
-            });
+            
+            // Calculate totalcount dynamically for each alert based on matching properties
+            const alertsWithTotalCount = await Promise.all(
+              alerts.map(async (alert) => {
+                try {
+                  // Build query based on alert filteredData criteria
+                  const query = { isDeleted: false, status: "active" };
+                  
+                  if (alert.filteredData) {
+                    // Match property type (sale, rent, offmarket, etc.)
+                    if (alert.filteredData.propertyType) {
+                      query.propertyType = alert.filteredData.propertyType;
+                    }
+                    
+                    // Match postal code / zipcode
+                    if (alert.filteredData.zipcode) {
+                      query.zipcode = alert.filteredData.zipcode;
+                    }
+                    
+                    // Match property type (Apartment, House, etc.) - case insensitive
+                    if (alert.filteredData.type) {
+                      query.type = { $regex: alert.filteredData.type, $options: 'i' };
+                    }
+                    
+                    // Match search location (address, city, etc) - case insensitive
+                    if (alert.filteredData.search) {
+                      const searchTerms = String(alert.filteredData.search).split(/[\s,]+/).filter(Boolean);
+                      const regexPattern = searchTerms.map((term) => new RegExp(term, "i"));
+                      query.address = { $in: regexPattern };
+                    }
+                    
+                    // Match min/max price
+                    if (alert.filteredData.minPrice !== undefined || alert.filteredData.maxPrice !== undefined) {
+                      query.price = {};
+                      if (alert.filteredData.minPrice !== undefined) {
+                        query.price.$gte = alert.filteredData.minPrice;
+                      }
+                      if (alert.filteredData.maxPrice !== undefined) {
+                        query.price.$lte = alert.filteredData.maxPrice;
+                      }
+                    }
+                    
+                    // Match min/max surface
+                    if (alert.filteredData.minSurface !== undefined || alert.filteredData.maxSurface !== undefined) {
+                      if (!query.$expr) {
+                        query.$expr = { $and: [] };
+                      }
+                      if (alert.filteredData.minSurface !== undefined) {
+                        query.$expr.$and.push({ $gte: [{ $toDouble: "$surface" }, alert.filteredData.minSurface] });
+                      }
+                      if (alert.filteredData.maxSurface !== undefined) {
+                        query.$expr.$and.push({ $lte: [{ $toDouble: "$surface" }, alert.filteredData.maxSurface] });
+                      }
+                    }
+                    
+                    // Match rooms
+                    if (alert.filteredData.rooms) {
+                      const roomsArray = Array.isArray(alert.filteredData.rooms) 
+                        ? alert.filteredData.rooms 
+                        : String(alert.filteredData.rooms).split(',').map(r => r.trim());
+                      query.rooms = { $in: roomsArray };
+                    }
+                  }
+                  
+                  // Count only properties created AFTER the last time this alert was viewed
+                  if (alert.lastViewedAt) {
+                    query.createdAt = { $gt: alert.lastViewedAt };
+                  }
+                  
+                  // Count properties matching this alert's criteria
+                  const totalcount = await db.property.countDocuments(query);
+                  
+                  console.log(`[Alerts] Alert "${alert.name || 'unnamed'}" criteria:`, alert.filteredData, "=> Found", totalcount, "matching properties");
+                  
+                  return { ...alert._doc, totalcount };
+                } catch (countErr) {
+                  console.error(`[Alerts] Error counting properties for alert ${alert._id}:`, countErr.message);
+                  return { ...alert._doc, totalcount: 0 };
+                }
+              })
+            );
+            
             return res.status(200).json({
                 success: true,
               data: { 
@@ -725,6 +804,48 @@ module.exports = {
         }
     },
 
+    markAlertAsViewed: async (req, res) => {
+        try {
+            const user_id = req.identity.id;
+            const alertId = req.params.id;
+            
+            if (!alertId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Please provide an alert ID."
+                });
+            }
+            
+            // Update alert's lastViewedAt to current timestamp
+            const updatedAlert = await Alerts.findByIdAndUpdate(
+                alertId,
+                { lastViewedAt: new Date() },
+                { new: true }
+            );
+            
+            if (!updatedAlert) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Alert not found."
+                });
+            }
+            
+            console.log(`[Alerts] Alert "${updatedAlert.name}" marked as viewed at ${new Date().toISOString()}`);
+            
+            return res.status(200).json({
+                success: true,
+                message: "Alert marked as viewed.",
+                data: updatedAlert
+            });
+        } catch (err) {
+            return res.status(400).json({
+                success: false,
+                message: "Failed to mark alert as viewed",
+                err: err.message,
+            });
+        }
+    },
+
     deleteAlerts: async (req, res) => {
         try {
             const user_id = req.identity.id;
@@ -733,7 +854,7 @@ module.exports = {
                 return res.status(400).json({
                     success: false,
                     message: "Please select an alert to delete."
-                })
+                });
             }
             const erase = await Alerts.findOneAndDelete({ _id: id, user_id: user_id });
             return res.status(200).json({
