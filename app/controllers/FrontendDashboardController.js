@@ -1469,6 +1469,48 @@ module.exports = {
         followedPropertyNews = { ...mockFollowedPropertyNews };
       }
 
+      // --- propertySearchPipeline: real searcher metrics ---
+      let propertySearchPipeline;
+      try {
+        const [
+          savedSearchesCount,
+          viewedProps,
+          followedCount,
+          inTransactionCount,
+          visitedCount,
+          applicationCount,
+          offerCount,
+        ] = await Promise.all([
+          db.alerts.countDocuments({ user_id: userId, isDeleted: false, status: 'active' }),
+          db.interests.distinct('propertyId', { buyerId: userId }).then(r => r.length),
+          db.followUnfollow.countDocuments({ user_id: userId, follow_unfollow: true }),
+          db.interests.countDocuments({ buyerId: userId, isDeleted: { $ne: true } }),
+          db.interests.countDocuments({
+            buyerId: userId,
+            funnelStatus: { $in: ['visit hosted', 'visit accept by user', 'review submit by user', 'renter assigned', 'transferred'] },
+          }),
+          db.interests.countDocuments({ buyerId: userId, interestType: 'interest sent' }),
+          db.interests.countDocuments({ buyerId: userId, interestType: 'offer sent' }),
+        ]);
+        propertySearchPipeline = {
+          visible: true,
+          _isMock: false,
+          emptyState: null,
+          metrics: {
+            savedSearches: savedSearchesCount,
+            propertyProfileViewed: viewedProps,
+            propertiesFollowed: followedCount,
+            propertiesInTransactionFlow: inTransactionCount,
+            propertiesVisited: visitedCount,
+            applicationSentToOwners: applicationCount,
+            purchaseProposalsSentToOwners: offerCount,
+          },
+        };
+      } catch (err) {
+        console.error('Error fetching propertySearchPipeline:', err);
+        propertySearchPipeline = mockPropertySearchPipeline;
+      }
+
       const sections = {
         todoList,
         propertyAttractivity,
@@ -1478,7 +1520,7 @@ module.exports = {
         p2pEstimation: mockP2PEstimation,
         p2pReport: mockP2PReport,
         trainingCenter: mockTrainingCenter,
-        propertySearchPipeline: mockPropertySearchPipeline,
+        propertySearchPipeline,
         ownerPipeline: mockOwnerPipeline,
       };
 
