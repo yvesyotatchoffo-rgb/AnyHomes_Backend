@@ -1489,8 +1489,10 @@ module.exports = {
             buyerId: userId,
             funnelStatus: { $in: ['visit hosted', 'visit accept by user', 'review submit by user', 'renter assigned', 'transferred'] },
           }),
-          db.interests.countDocuments({ buyerId: userId, interestType: 'interest sent', propertyType: 'rent' }),
-          db.interests.countDocuments({ buyerId: userId, offerStatus: true }),
+          // Candidatures = rental interests that reached "application file sent" stage or beyond
+          db.interests.countDocuments({ buyerId: userId, propertyType: 'rent', funnelStatus: { $in: ['application submit by user', 'renter assigned'] } }),
+          // Offres d'achat = sale interests that reached "purchase offer sent" stage or beyond
+          db.interests.countDocuments({ buyerId: userId, propertyType: 'sale', funnelStatus: { $in: ['offer submit by user', 'confirmation by user', 'transferred'] } }),
         ]);
         propertySearchPipeline = {
           visible: true,
