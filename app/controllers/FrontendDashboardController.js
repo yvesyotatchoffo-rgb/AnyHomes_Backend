@@ -568,7 +568,6 @@ module.exports = {
         if (fd?.minSurface) parts.push(`minSurface=${fd.minSurface}`);
         if (fd?.maxSurface) parts.push(`maxSurface=${fd.maxSurface}`);
         if (fd?.rooms) parts.push(`rooms=${fd.rooms}`);
-        parts.push('sort=createdAt', 'order=desc');
         return `/properties?${parts.join('&')}`;
       };
       // Build a property query matching AlertsController logic exactly
