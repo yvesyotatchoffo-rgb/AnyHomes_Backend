@@ -601,7 +601,7 @@ module.exports = {
           const fd = s.filteredData || {};
           const [newCount, preview] = await Promise.all([
             db.property.countDocuments(buildPropertyQuery(fd, s.lastViewedAt)),
-            db.property.find(buildPropertyQuery(fd, null)).limit(5).lean(),
+            db.property.find(buildPropertyQuery(fd, null)).limit(10).lean(),
           ]);
           const criteriaLabel = [fd.type, fd.propertyType, fd.search || fd.zipcode].filter(Boolean).join(' • ');
           return {
