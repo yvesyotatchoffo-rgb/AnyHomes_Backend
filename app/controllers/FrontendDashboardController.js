@@ -1377,11 +1377,85 @@ module.exports = {
         items: todos,
       };
 
+      // --- followedPropertyNews: timeline entries for properties followed by user ---
+      let followedPropertyNews = { visible: true, _isMock: false, items: [] };
+      try {
+        const followedPropertyIds = (await db.followUnfollow
+          .find({ user_id: userId, follow_unfollow: true })
+          .select('property_id')
+          .lean())
+          .map(f => f.property_id).filter(Boolean);
+
+        if (followedPropertyIds.length > 0) {
+          const timelineTypeLabel = {
+            newPrice: 'Changement de prix',
+            priceChanged: 'Changement de prix',
+            propertyMonthlyCharges: 'Dépenses ajoutées',
+            propertyCreated: 'Bien publié',
+            propertyType: 'Type de bien mis à jour',
+            revenue_detail: 'Revenus locatifs ajoutés',
+            proposal: 'Proposition reçue',
+            ownerChange: 'Changement de propriétaire',
+            interestStatus: 'Changement de statut',
+            renterInterestStatus: 'Changement de statut locataire',
+            photosAdded: 'Photos ajoutées',
+            statusChanged: 'Changement de statut',
+          };
+          const getPropertyStatus = (prop) => {
+            const pt = (prop.propertyType || '').toLowerCase();
+            if (pt === 'sale') return 'À vendre';
+            if (pt === 'rent') return 'À louer';
+            if (pt === 'offmarket') return 'Off-market';
+            return 'Actif';
+          };
+
+          const timelineEntries = await db.timeline
+            .find({ propertyId: { $in: followedPropertyIds } })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean();
+
+          if (timelineEntries.length > 0) {
+            const uniquePropIds = [...new Set(timelineEntries.map(t => String(t.propertyId)))];
+            const propDocs = await db.property
+              .find({ _id: { $in: uniquePropIds } })
+              .select('propertyTitle title type propertyType images rooms surface city zipcode')
+              .lean();
+            const propMap = {};
+            propDocs.forEach(p => { propMap[String(p._id)] = p; });
+
+            followedPropertyNews.items = timelineEntries.map(entry => {
+              const prop = propMap[String(entry.propertyId)] || {};
+              const location = [prop.zipcode, prop.city].filter(Boolean).join(' ');
+              return {
+                id: String(entry._id),
+                occurredAt: entry.createdAt,
+                newsTitle: timelineTypeLabel[entry.type] || entry.type || 'Actualité',
+                property: {
+                  id: String(entry.propertyId),
+                  title: prop.propertyTitle || prop.title || 'Bien immobilier',
+                  status: getPropertyStatus(prop),
+                  rooms: prop.rooms || 0,
+                  surface: prop.surface || 0,
+                  location,
+                  imageUrl: resolvePropertyCoverUrl(prop.images) || defaultCover,
+                  route: `/property-details?id=${entry.propertyId}`,
+                  timelineRoute: `/property-timeline?id=${entry.propertyId}`,
+                },
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching followedPropertyNews:', err);
+        followedPropertyNews = { ...mockFollowedPropertyNews };
+      }
+
       const sections = {
         todoList,
         propertyAttractivity,
         savedSearchResults,
-        followedPropertyNews: mockFollowedPropertyNews,
+        followedPropertyNews,
         pastTransactions: mockPastTransactions,
         p2pEstimation: mockP2PEstimation,
         p2pReport: mockP2PReport,
