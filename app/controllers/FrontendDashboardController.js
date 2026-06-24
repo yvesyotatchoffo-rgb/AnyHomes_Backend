@@ -571,22 +571,38 @@ module.exports = {
         parts.push('sort=createdAt', 'order=desc');
         return `/properties?${parts.join('&')}`;
       };
+      // Build a property query matching AlertsController logic exactly
+      const buildPropertyQuery = (fd, lastViewedAt) => {
+        const qs = { status: 'active' };
+        if (fd.propertyType) qs.propertyType = fd.propertyType;
+        if (fd.type) qs.type = { $regex: fd.type, $options: 'i' };
+        if (fd.zipcode) qs.zipcode = fd.zipcode;
+        if (fd.search) {
+          const terms = String(fd.search).split(/[\s,]+/).filter(Boolean);
+          qs.address = { $in: terms.map((t) => new RegExp(t, 'i')) };
+        }
+        if (fd.minPrice !== undefined || fd.maxPrice !== undefined) {
+          qs.price = {};
+          if (fd.minPrice !== undefined) qs.price.$gte = fd.minPrice;
+          if (fd.maxPrice !== undefined) qs.price.$lte = fd.maxPrice;
+        }
+        if (fd.rooms) {
+          const roomsArr = Array.isArray(fd.rooms) ? fd.rooms : String(fd.rooms).split(',').map((r) => r.trim());
+          qs.rooms = { $in: roomsArr };
+        }
+        if (lastViewedAt) qs.createdAt = { $gt: new Date(lastViewedAt) };
+        return qs;
+      };
       const savedSearches = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
       const savedSearchResults = {
         visible: true,
         emptyState: savedSearches.length === 0 ? { message: 'Aucune alerte de recherche', ctaLabel: 'Nouvelle recherche', ctaRoute: '/properties' } : null,
         _isMock: savedSearches.length === 0,
         cards: savedSearches.length > 0 ? await Promise.all(savedSearches.map(async (s) => {
-          // Compter les biens correspondants créés depuis la dernière consultation
-          const qs = { isDeleted: false };
           const fd = s.filteredData || {};
-          if (fd.propertyType) qs.propertyType = fd.propertyType;
-          if (fd.type) qs.type = fd.type;
-          if (fd.zipcode) qs.zipcode = fd.zipcode;
-          if (s.lastViewedAt) qs.createdAt = { $gt: new Date(s.lastViewedAt) };
           const [newCount, preview] = await Promise.all([
-            db.property.countDocuments(qs),
-            db.property.find({ isDeleted: false, ...(fd.propertyType ? { propertyType: fd.propertyType } : {}), ...(fd.zipcode ? { zipcode: fd.zipcode } : {}) }).limit(5).lean(),
+            db.property.countDocuments(buildPropertyQuery(fd, s.lastViewedAt)),
+            db.property.find(buildPropertyQuery(fd, null)).limit(5).lean(),
           ]);
           const criteriaLabel = [fd.type, fd.propertyType, fd.search || fd.zipcode].filter(Boolean).join(' • ');
           return {
@@ -1235,12 +1251,7 @@ module.exports = {
           
           for (const alert of userAlerts.slice(0, 3)) {
             const fd = alert.filteredData || {};
-            const qs = { isDeleted: false };
-            if (fd.propertyType) qs.propertyType = fd.propertyType;
-            if (fd.type) qs.type = fd.type;
-            if (fd.zipcode) qs.zipcode = fd.zipcode;
-            if (alert.lastViewedAt) qs.createdAt = { $gt: new Date(alert.lastViewedAt) };
-            const newCount = await db.property.countDocuments(qs);
+            const newCount = await db.property.countDocuments(buildPropertyQuery(fd, alert.lastViewedAt));
             if (newCount > 0) {
               todos.push({
                 id: `todo-search-${alert._id}`,
