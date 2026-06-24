@@ -1380,11 +1380,24 @@ module.exports = {
       // --- followedPropertyNews: timeline entries for properties followed by user ---
       let followedPropertyNews = { visible: true, _isMock: false, items: [] };
       try {
-        const followedPropertyIds = (await db.followUnfollow
+        // Fetch follow docs with date so we can restrict timeline to post-follow events.
+        // Sort desc so the latest follow date wins when the user has followed/unfollowed/re-followed.
+        const followDocs = await db.followUnfollow
           .find({ user_id: userId, follow_unfollow: true })
-          .select('property_id')
-          .lean())
-          .map(f => f.property_id).filter(Boolean);
+          .select('property_id createdAt')
+          .sort({ createdAt: -1 })
+          .lean();
+
+        // Build map: propertyId (string) → { date, rawId }  (latest follow wins)
+        const followedAtMap = {};
+        followDocs.forEach(f => {
+          const pid = String(f.property_id);
+          if (pid && pid !== 'null' && pid !== 'undefined' && !followedAtMap[pid]) {
+            followedAtMap[pid] = { date: f.createdAt, rawId: f.property_id };
+          }
+        });
+
+        const followedPropertyIds = Object.keys(followedAtMap);
 
         if (followedPropertyIds.length > 0) {
           const timelineTypeLabel = {
@@ -1410,7 +1423,12 @@ module.exports = {
           };
 
           const timelineEntries = await db.timeline
-            .find({ propertyId: { $in: followedPropertyIds } })
+            .find({
+              $or: followedPropertyIds.map(pid => ({
+                propertyId: followedAtMap[pid].rawId,
+                createdAt: { $gt: followedAtMap[pid].date },
+              })),
+            })
             .sort({ createdAt: -1 })
             .limit(20)
             .lean();
