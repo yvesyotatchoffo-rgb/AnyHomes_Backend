@@ -638,6 +638,36 @@ module.exports = {
         });
       }
 
+      // --- Card 21: CREATE_PROPERTY_PROFILE - Shown to users identified as owners at signup who have no property yet ---
+      const ownerSignupObjectives = ['Vendre ma propriété', 'Louer ma propriété', 'Évaluer ma propriété', 'Préparer une vente future'];
+      if (ownerSignupObjectives.includes(user.signupObjective) && properties.length === 0) {
+        todos.push({
+          id: `todo-create-property-profile-${user._id}`,
+          type: 'CREATE_PROPERTY_PROFILE',
+          label: 'Créer votre annonce immobilière',
+          role: 'OWNER',
+          priority: 0,
+          description: 'Publiez votre bien pour trouver des acheteurs ou locataires',
+          createdAt: new Date(),
+          action: { route: '/property1' },
+        });
+      }
+
+      // --- Card 23: FILL_PARTNER_PROFILE - Shown to partner users who haven't filled their encart partenaire yet ---
+      const isPartnerUser = user.isLocalFavorite || user.isGlobalFavorite || user.partnerType === 'local' || user.partnerType === 'global';
+      if (isPartnerUser && !user.featuredBio) {
+        todos.push({
+          id: `todo-fill-partner-profile-${user._id}`,
+          type: 'FILL_PARTNER_PROFILE',
+          label: 'Remplir votre profil partenaire',
+          role: 'OWNER',
+          priority: 0,
+          description: 'Complétez votre encart partenaire pour être mis en avant',
+          createdAt: new Date(),
+          action: { route: '/profile#partner-card' },
+        });
+      }
+
       if (properties.length > 0) {
         // If user is owner, suggest to send seller file or open visit slots
         // No limit - all properties are included, frontend handles pagination
@@ -645,7 +675,7 @@ module.exports = {
           todos.push({
             id: `todo-prop-${p._id}`,
             type: 'SEND_SELLER_FILE',
-            label: `Mettre à jour le dossier de ${p.propertyTitle || p.title || 'votre bien'}`,
+            label: `Constituer le dossier vendeur du bien`,
             role: 'OWNER',
             priority: idx + 1,
             createdAt: p.createdAt,
@@ -653,6 +683,28 @@ module.exports = {
             action: { route: `/seller-file?propertyId=${p._id}` },
           });
         });
+
+        // --- Card 22: CREATE_QR_CODE - Une carte par bien en vente ou en location sans QR code ---
+        try {
+          const saleOrRentProperties = properties.filter(p => p.propertyType === 'sale' || p.propertyType === 'rent');
+          for (const p of saleOrRentProperties) {
+            const existingQr = await db.qrFlyers.findOne({ propertyId: p._id, isDeleted: false }).lean();
+            if (!existingQr) {
+              todos.push({
+                id: `todo-create-qr-code-${p._id}`,
+                type: 'CREATE_QR_CODE',
+                label: `Créer le QR code de votre bien`,
+                role: 'OWNER',
+                priority: 50,
+                createdAt: p.createdAt,
+                property: { id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
+                action: { route: `/property/qr-code?propertyId=${p._id}` },
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[FrontendDashboardController] Error generating CREATE_QR_CODE cards:', err);
+        }
 
         // --- GROUPE 2: VISITES - Transaction-based visit cards ---
         try {
@@ -674,7 +726,7 @@ module.exports = {
             const otherUserId = isUserOwner ? interest.buyerId : (interest.propertyId ? null : null);
 
             // Get property details
-            const property = await db.property.findById(interest.propertyId).select('type surface city propertyTitle title images addedBy').lean();
+            const property = await db.property.findById(interest.propertyId).select('type surface city propertyTitle title images addedBy propertyType listingType').lean();
             if (!property) continue;
 
             // For owner interests, other user = buyer; for lead interests, other user = property owner
@@ -701,11 +753,11 @@ module.exports = {
                 label: `Inviter ${otherUserName} pour une visite`,
                 role: 'OWNER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
-                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}` },
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
               });
             }
 
@@ -717,11 +769,29 @@ module.exports = {
                 label: `Réserver un créneau de visite`,
                 role: 'BUYER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
                 action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 24: PROPOSE_NEW_VISIT_SLOT (Owner perspective)
+            // Trigger : le lead a demandé un changement de créneau de visite
+            // Done    : le propriétaire propose un nouveau créneau (funnelStatus quitte ce statut)
+            if (isUserOwner && funnelStatus === 'request to change the visit slot') {
+              todos.push({
+                id: `todo-propose-new-visit-slot-${interest._id}`,
+                type: 'PROPOSE_NEW_VISIT_SLOT',
+                label: `${otherUserName} demande un nouveau créneau de visite`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
               });
             }
 
@@ -733,7 +803,7 @@ module.exports = {
                 label: `Évaluer la visite`,
                 role: 'BUYER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
@@ -748,10 +818,10 @@ module.exports = {
               todos.push({
                 id: `todo-request-seller-file-${interest._id}`,
                 type: 'REQUEST_SELLER_FILE',
-                label: `Demander le dossier de vente`,
+                label: `Demander le dossier vendeur`,
                 role: 'BUYER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
@@ -766,10 +836,10 @@ module.exports = {
               todos.push({
                 id: `todo-documents-received-${interest._id}`,
                 type: 'DOCUMENTS_RECEIVED',
-                label: `Dossier reçu de ${otherUserName}`,
+                label: `Dossier vendeur reçu de ${otherUserName}`,
                 role: 'BUYER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
@@ -782,14 +852,308 @@ module.exports = {
               todos.push({
                 id: `todo-send-transaction-documents-${interest._id}`,
                 type: 'SEND_TRANSACTION_DOCUMENTS',
-                label: `Envoyer le dossier de vente à ${otherUserName}`,
+                label: `Envoyer le dossier vendeur à ${otherUserName}`,
                 role: 'OWNER',
                 priority: 100 + todos.length,
-                createdAt: interest.createdAt,
+                createdAt: interest.updatedAt || interest.createdAt,
                 property: propertyInfo,
                 otherUser: { id: resolvedOtherUserId, name: otherUserName },
                 transactionId: interest._id,
-                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}` },
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 10: SEND_OFFER (Lead perspective - Sale only, after visit hosted)
+            // Inclut aussi les statuts post-visite où l'acheteur peut encore envoyer son offre
+            const isVisitHosted = ['visit hosted', 'buyer requested for document', 'document send by owner'].includes(interest.funnelStatus);
+            const isSaleProperty = property && (property.propertyType === 'sale' || property.listingType === 'sale');
+            // offerSubmitted/offerStatus ne sont pas mis à jour par l'app → utiliser funnelStatus comme source de vérité
+            const offerFunnelStatuses = ['offer submit by user', 'offer submit by owner', 'offer accept by owner', 'preslot opened by owner', 'preslot accept by owner', 'saleslot accept by user', 'confirmation by user', 'transferred'];
+            const hasSubmittedOffer = interest.offerSubmitted || interest.offerStatus === 'submitted' || offerFunnelStatuses.includes(interest.funnelStatus);
+            
+            if (!isUserOwner && isVisitHosted && isSaleProperty && !hasSubmittedOffer) {
+              todos.push({
+                id: `todo-send-offer-${interest._id}`,
+                type: 'SEND_OFFER',
+                label: `Envoyer votre offre`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 11: SEND_APPLICATION (Lead perspective - Rental only, after visit hosted)
+            const isRentalProperty = property && (property.propertyType === 'rent' || property.propertyType === 'rental' || property.listingType === 'rent' || property.listingType === 'rental');
+            // applicationSubmitted/applicationStatus ne sont pas mis à jour → utiliser funnelStatus
+            const applicationFunnelStatuses = ['application submit by user', 'renter assigned', 'transferred'];
+            const hasSubmittedApplication = interest.applicationSubmitted || interest.applicationStatus === 'submitted' || applicationFunnelStatuses.includes(interest.funnelStatus);
+            
+            if (!isUserOwner && isVisitHosted && isRentalProperty && !hasSubmittedApplication) {
+              todos.push({
+                id: `todo-send-application-${interest._id}`,
+                type: 'SEND_APPLICATION',
+                label: `Envoyer votre dossier de candidature`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}` },
+              });
+            }
+
+            // Card 12: RESPOND_TO_OFFER (Owner perspective - Sale only, after lead submits offer)
+            // offerSubmitted/offerStatus ne sont pas mis à jour → utiliser funnelStatus comme source de vérité
+            const leadSubmittedOffer = (interest.offerSubmitted && interest.offerStatus === 'submitted') || interest.funnelStatus === 'offer submit by user';
+            const ownerHasResponded = interest.offerStatus === 'accepted' || interest.offerStatus === 'rejected' || interest.offerStatus === 'counter_offer' || ['offer submit by owner', 'offer accept by owner', 'offer accept by user', 'preslot opened by owner', 'preslot booked by user', 'preslot accept by owner', 'preslot accept by user', 'saleslot booked by owner', 'saleslot booked by user', 'saleslot accept by user', 'confirmation by user', 'transferred'].includes(interest.funnelStatus);
+            
+            if (isUserOwner && isSaleProperty && leadSubmittedOffer && !ownerHasResponded) {
+              todos.push({
+                id: `todo-respond-to-offer-${interest._id}`,
+                type: 'RESPOND_TO_OFFER',
+                label: `Répondre à l'offre de ${otherUserName}`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 13: RESPOND_TO_APPLICATION (Owner perspective - Rental only, after lead submits application)
+            // applicationSubmitted/applicationStatus ne sont pas mis à jour → utiliser funnelStatus comme source de vérité
+            const leadSubmittedApplication = (interest.applicationSubmitted && interest.applicationStatus === 'submitted') || interest.funnelStatus === 'application submit by user';
+            const ownerHasRespondedApp = interest.applicationStatus === 'accepted' || interest.applicationStatus === 'rejected' || interest.funnelStatus === 'renter assigned' || interest.funnelStatus === 'transferred';
+            
+            if (isUserOwner && isRentalProperty && leadSubmittedApplication && !ownerHasRespondedApp) {
+              todos.push({
+                id: `todo-respond-to-application-${interest._id}`,
+                type: 'RESPOND_TO_APPLICATION',
+                label: `Répondre à la candidature de ${otherUserName}`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 14: COUNTER_OFFER_RESPONSE (Lead perspective - Sale only, when owner sends counter-offer)
+            // offerStatus n'est jamais mis à jour → utiliser funnelStatus comme source de vérité
+            // 'offer submit by owner' = le vendeur a envoyé une contre-offre → l'acheteur doit répondre
+            const hasReceivedCounterOffer = interest.offerStatus === 'counter_offer' ||
+              (!isUserOwner && interest.funnelStatus === 'offer submit by owner');
+            const hasRespondedToCounterOffer = interest.offerStatus === 'accepted' || interest.offerStatus === 'rejected' || interest.offerStatus === 'counter_offer_response' ||
+              ['offer accept by user', 'offer accept by owner', 'preslot opened by owner', 'preslot booked by user', 'preslot accept by owner', 'preslot accept by user', 'saleslot booked by owner', 'saleslot booked by user', 'saleslot accept by user', 'confirmation by user', 'transferred'].includes(interest.funnelStatus);
+            
+            if (isSaleProperty && hasReceivedCounterOffer && !hasRespondedToCounterOffer) {
+              todos.push({
+                id: `todo-counter-offer-response-${interest._id}`,
+                type: 'COUNTER_OFFER_RESPONSE',
+                label: `Répondre à la contre-offre`,
+                role: isUserOwner ? 'OWNER' : 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: isUserOwner ? `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` : `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 15: INVITE_PRESALE_SIGN (Owner - Sale only)
+            // Trigger : offre acceptée (par le proprio ou lead qui accepte la contre-offre) → proprio invite à signer le compromis
+            // Done    : propriétaire a ouvert le slot compromis (preslot opened by owner) ou au-delà
+            const offerFullyAccepted = ['offer accept by owner', 'offer accept by user'].includes(interest.funnelStatus);
+            if (isSaleProperty && isUserOwner && offerFullyAccepted) {
+              todos.push({
+                id: `todo-invite-presale-sign-${interest._id}`,
+                type: 'INVITE_PRESALE_SIGN',
+                label: `Inviter ${otherUserName} à signer le compromis de vente`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 16: BOOK_PRESALE_SLOT (Lead - Sale only)
+            // Trigger : propriétaire a ouvert le slot compromis (preslot opened by owner)
+            // Done    : lead a réservé le slot (preslot booked by user) ou au-delà
+            if (isSaleProperty && !isUserOwner && interest.funnelStatus === 'preslot opened by owner') {
+              todos.push({
+                id: `todo-book-presale-slot-${interest._id}`,
+                type: 'BOOK_PRESALE_SLOT',
+                label: `Réserver un créneau pour la signature du compromis`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 16b: CONFIRM_PRESALE_SIGN - Propriétaire (Sale only)
+            // Trigger : slot accepté/réservé (preslot accept by user OU preslot accept by owner)
+            //           → le bouton "Confirm signing" est visible dans BuyerCard/LanderCard à ces deux statuts
+            // Done    : dès que l'un des deux confirme la signature (contract signed by owner OU contract signed by user) ou au-delà
+            const presaleConfirmationNeeded = ['preslot accept by user', 'preslot accept by owner'].includes(interest.funnelStatus);
+            const presaleAlreadyConfirmed = ['contract signed by owner', 'contract signed by user', 'saleslot booked by owner', 'saleslot booked by user', 'saleslot accept by user', 'confirmation by owner', 'confirmation by user', 'transferred'].includes(interest.funnelStatus);
+            if (isSaleProperty && isUserOwner && presaleConfirmationNeeded && !presaleAlreadyConfirmed) {
+              todos.push({
+                id: `todo-confirm-presale-sign-owner-${interest._id}`,
+                type: 'CONFIRM_PRESALE_SIGN',
+                label: `Confirmer la signature du compromis de vente`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 16c: CONFIRM_PRESALE_SIGN - Lead (Sale only)
+            // Même logique : apparaît à preslot booked by user, disparaît dès qu'un des deux confirme
+            if (isSaleProperty && !isUserOwner && presaleConfirmationNeeded && !presaleAlreadyConfirmed) {
+              todos.push({
+                id: `todo-confirm-presale-sign-lead-${interest._id}`,
+                type: 'CONFIRM_PRESALE_SIGN',
+                label: `Confirmer la signature du compromis de vente`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 17: INVITE_FINAL_SALE_SIGN (Owner - Sale only)
+            // Trigger : l'un des deux a confirmé la signature du compromis
+            //           (contract signed by owner OU contract signed by user)
+            // Done    : propriétaire a ouvert le slot vente finale (saleslot booked by owner) ou au-delà
+            if (isSaleProperty && isUserOwner && ['contract signed by owner', 'contract signed by user'].includes(interest.funnelStatus)) {
+              todos.push({
+                id: `todo-invite-final-sale-sign-${interest._id}`,
+                type: 'INVITE_FINAL_SALE_SIGN',
+                label: `Inviter ${otherUserName} à signer la vente définitive`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 18: BOOK_FINAL_SALE_SLOT (Lead - Sale only)
+            // Trigger : propriétaire a ouvert le slot vente finale (saleslot booked by owner)
+            // Done    : lead a réservé le slot vente finale (saleslot booked by user) ou au-delà
+            if (isSaleProperty && !isUserOwner && interest.funnelStatus === 'saleslot booked by owner') {
+              todos.push({
+                id: `todo-book-final-sale-slot-${interest._id}`,
+                type: 'BOOK_FINAL_SALE_SLOT',
+                label: `Réserver un créneau pour la signature finale`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 19a/19b: CONFIRM_FINAL_SALE_SIGN - Propriétaire + Lead (Sale only)
+            // Trigger : le lead a réservé le slot de signature finale (saleslot accept by user)
+            //           → le bouton "Final Contract Signed" est visible dans BuyerCard/LeadCards à ce statut
+            // Done    : dès que l'un des deux confirme (confirmation by owner OU confirmation by user) ou au-delà
+            const finalSignConfirmNeeded = interest.funnelStatus === 'saleslot accept by user';
+            const finalSignAlreadyConfirmed = ['confirmation by owner', 'confirmation by user', 'transferred'].includes(interest.funnelStatus);
+            if (isSaleProperty && isUserOwner && finalSignConfirmNeeded && !finalSignAlreadyConfirmed) {
+              todos.push({
+                id: `todo-confirm-final-sale-sign-owner-${interest._id}`,
+                type: 'CONFIRM_FINAL_SALE_SIGN',
+                label: `Confirmer la signature de la vente définitive`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+            if (isSaleProperty && !isUserOwner && finalSignConfirmNeeded && !finalSignAlreadyConfirmed) {
+              todos.push({
+                id: `todo-confirm-final-sale-sign-lead-${interest._id}`,
+                type: 'CONFIRM_FINAL_SALE_SIGN',
+                label: `Confirmer la signature de la vente définitive`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 19: REQUEST_PROFILE_TRANSFER - Lead (Sale only)
+            // Trigger : vente définitive confirmée (confirmation by owner OU confirmation by user)
+            //           ET la demande de transfert n'a pas encore été envoyée
+            // Done    : propertyTransferRequest === true (set par POST interests/notifyOwner)
+            const needsTransferRequest = ['confirmation by owner', 'confirmation by user'].includes(interest.funnelStatus) && !interest.propertyTransferRequest;
+            if (isSaleProperty && !isUserOwner && needsTransferRequest) {
+              todos.push({
+                id: `todo-request-profile-transfer-${interest._id}`,
+                type: 'REQUEST_PROFILE_TRANSFER',
+                label: `Demander le transfert de propriété`,
+                role: 'BUYER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-searcher?interestId=${interest._id}&propertyId=${interest.propertyId}` },
+              });
+            }
+
+            // Card 20: TRANSFER_PROFILE - Propriétaire (Sale only)
+            // Trigger : vente définitive confirmée (confirmation by owner/user ou transferred)
+            //           ET le transfert de propriété n'est pas encore complété
+            // Done    : transferDone === true ET interestStatus === "completed"
+            const needsTransfer = ['confirmation by owner', 'confirmation by user', 'transferred'].includes(interest.funnelStatus) && !(interest.transferDone && interest.interestStatus === 'completed');
+            if (isSaleProperty && isUserOwner && needsTransfer) {
+              todos.push({
+                id: `todo-transfer-profile-${interest._id}`,
+                type: 'TRANSFER_PROFILE',
+                label: `Transférer la propriété à ${otherUserName}`,
+                role: 'OWNER',
+                priority: 100 + todos.length,
+                createdAt: interest.updatedAt || interest.createdAt,
+                property: propertyInfo,
+                otherUser: { id: resolvedOtherUserId, name: otherUserName },
+                transactionId: interest._id,
+                action: { route: `/real-estate-transaction-owner?interestId=${interest._id}&propertyId=${interest.propertyId}` },
               });
             }
           }
@@ -905,12 +1269,6 @@ module.exports = {
           console.error('Error fetching pending services for dashboard:', err);
         }
 
-        // Sort todos by createdAt (most recent first)
-        todos.sort((a, b) => {
-          const dateA = a.createdAt || new Date(0);
-          const dateB = b.createdAt || new Date(0);
-          return new Date(dateB) - new Date(dateA);
-        });
       } else {
         // If no properties, provide the frontend mock todo items so backend is authoritative
         todos.push(
@@ -962,6 +1320,13 @@ module.exports = {
           }
         );
       }
+
+      // Sort todos by createdAt (most recent first) - backend is authoritative for order
+      todos.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
 
       const todoList = {
         visible: true,
