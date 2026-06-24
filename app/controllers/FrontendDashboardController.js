@@ -1489,8 +1489,8 @@ module.exports = {
             buyerId: userId,
             funnelStatus: { $in: ['visit hosted', 'visit accept by user', 'review submit by user', 'renter assigned', 'transferred'] },
           }),
-          db.interests.countDocuments({ buyerId: userId, interestType: 'interest sent' }),
-          db.interests.countDocuments({ buyerId: userId, interestType: 'offer sent' }),
+          db.interests.countDocuments({ buyerId: userId, interestType: 'interest sent', propertyType: 'rent' }),
+          db.interests.countDocuments({ buyerId: userId, offerStatus: true }),
         ]);
         propertySearchPipeline = {
           visible: true,
