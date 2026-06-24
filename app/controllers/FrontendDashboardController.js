@@ -15,6 +15,187 @@ const resolvePropertyCoverUrl = (images) => {
   return null;
 };
 
+// --- Past Transactions helper ---
+// Maps property/alert type strings to transactions.local_type
+const toLocalType = (type) => {
+  const t = (type || '').toLowerCase();
+  if (t === 'apartment') return 'Appartement';
+  if (t === 'house') return 'Maison';
+  return null;
+};
+
+// Extracts a 5-digit French postal code from a search string like "75018 Paris, France"
+const extractPostalCode = (search) => {
+  const m = (search || '').match(/\b\d{5}\b/);
+  return m ? m[0] : null;
+};
+
+// Maps a mutation_date string ("D/M/YYYY") + year to an ISO date string
+const parseMutationDate = (mutationDate, year) => {
+  if (!mutationDate) return year ? `${year}-01-01` : null;
+  const parts = mutationDate.split('/');
+  if (parts.length === 3) {
+    const [d, m, y] = parts;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  return year ? `${year}-01-01` : null;
+};
+
+// Builds the pastTransactions section for a given user, using 4 data sources
+// and progressive query fallback.
+const buildPastTransactions = async (userId) => {
+  const KNOWN_YEARS = [2024, 2014]; // most recent first
+  const SAMPLE_SIZE = 2;
+
+  // --- Gather criteria from 4 sources (stop at first that yields data) ---
+  let criteria = null; // { postalCode, localType, rooms, surface }
+
+  // Source 1: most recently updated active saved alert
+  const alert = await db.alerts
+    .find({ user_id: userId, isDeleted: false, status: 'active' })
+    .sort({ updatedAt: -1 })
+    .limit(1)
+    .lean()
+    .then(r => r[0] || null);
+  if (alert?.filteredData) {
+    const fd = alert.filteredData;
+    const postalCode = extractPostalCode(fd.search);
+    const localType = toLocalType(fd.type);
+    if (postalCode || localType) {
+      criteria = { postalCode, localType, rooms: null, surface: null };
+    }
+  }
+
+  // Source 2: last created property by user
+  if (!criteria) {
+    const prop = await db.property
+      .find({ addedBy: userId, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .select('zipcode type rooms surface')
+      .lean()
+      .then(r => r[0] || null);
+    if (prop) {
+      criteria = {
+        postalCode: prop.zipcode || null,
+        localType: toLocalType(prop.type),
+        rooms: Number(prop.rooms) || null,
+        surface: Number(prop.surface) || null,
+      };
+    }
+  }
+
+  // Source 3: last quick search (collection is empty — reserved for future use)
+
+  // Source 4: last followed property
+  if (!criteria) {
+    const lastFollow = await db.followUnfollow
+      .find({ user_id: userId, follow_unfollow: true })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .lean()
+      .then(r => r[0] || null);
+    if (lastFollow?.property_id) {
+      const prop = await db.property
+        .findOne({ _id: lastFollow.property_id })
+        .select('zipcode type rooms surface')
+        .lean();
+      if (prop) {
+        criteria = {
+          postalCode: prop.zipcode || null,
+          localType: toLocalType(prop.type),
+          rooms: Number(prop.rooms) || null,
+          surface: Number(prop.surface) || null,
+        };
+      }
+    }
+  }
+
+  if (!criteria || !criteria.postalCode) {
+    return { visible: true, _isMock: false, items: [] };
+  }
+
+  // --- Progressive query fallback (most specific → postal code only) ---
+  // Each attempt removes one criterion; we stop as soon as we get >= SAMPLE_SIZE results.
+  const baseFilter = { land_value_num: { $gt: 0 }, real_built_surface_num: { $gt: 0 } };
+
+  const buildAttempts = ({ postalCode, localType, rooms, surface }) => {
+    const attempts = [];
+    const surfaceFilter = surface
+      ? { $gte: surface - Math.max(15, surface * 0.3), $lte: surface + Math.max(15, surface * 0.3) }
+      : null;
+
+    // Attempt 1: postalCode + localType + rooms + surface
+    if (postalCode && localType && rooms && surfaceFilter) {
+      attempts.push({ postal_code: postalCode, local_type: localType, number_of_main_pieces_num: rooms, real_built_surface_num: surfaceFilter });
+    }
+    // Attempt 2: postalCode + localType + rooms (no surface)
+    if (postalCode && localType && rooms) {
+      attempts.push({ postal_code: postalCode, local_type: localType, number_of_main_pieces_num: rooms });
+    }
+    // Attempt 3: postalCode + localType
+    if (postalCode && localType) {
+      attempts.push({ postal_code: postalCode, local_type: localType });
+    }
+    // Attempt 4: postalCode only (last resort)
+    if (postalCode) {
+      attempts.push({ postal_code: postalCode });
+    }
+    // Deduplicate (some steps collapse when criteria are already null)
+    const seen = new Set();
+    return attempts.filter(a => {
+      const key = JSON.stringify(a);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const attempts = buildAttempts(criteria);
+
+  let sampledDocs = [];
+  outerLoop:
+  for (const year of KNOWN_YEARS) {
+    for (const extra of attempts) {
+      const matchStage = { ...baseFilter, year, ...extra };
+      const count = await db.pastTransaction.countDocuments(matchStage);
+      if (count >= SAMPLE_SIZE) {
+        sampledDocs = await db.pastTransaction.aggregate([
+          { $match: matchStage },
+          { $sample: { size: SAMPLE_SIZE } },
+        ]);
+        break outerLoop;
+      }
+    }
+  }
+
+  // Last resort: any year, postal code only
+  if (sampledDocs.length < SAMPLE_SIZE && criteria.postalCode) {
+    const matchStage = { ...baseFilter, postal_code: criteria.postalCode };
+    const count = await db.pastTransaction.countDocuments(matchStage);
+    if (count >= SAMPLE_SIZE) {
+      sampledDocs = await db.pastTransaction.aggregate([
+        { $match: matchStage },
+        { $sample: { size: SAMPLE_SIZE } },
+      ]);
+    }
+  }
+
+  const items = sampledDocs.map(tx => ({
+    id: String(tx._id),
+    propertyType: tx.local_type || 'Bien',
+    price: tx.land_value_num,
+    surface: tx.real_built_surface_num,
+    rooms: tx.number_of_main_pieces_num,
+    locationLabel: tx.community_name || tx.postal_code,
+    fullAddress: [tx.address_number, tx.address_channel_name, tx.postal_code, tx.community_name]
+      .filter(Boolean).join(' '),
+    soldAt: parseMutationDate(tx.mutation_date, tx.year),
+  }));
+
+  return { visible: true, _isMock: false, items };
+};
+
 const toPropertyCard = (p) => ({
   propertyId: p._id || p.id,
   property: {
@@ -1513,12 +1694,20 @@ module.exports = {
         propertySearchPipeline = mockPropertySearchPipeline;
       }
 
+      // --- pastTransactions: real historical transactions matching user context ---
+      let pastTransactions = mockPastTransactions;
+      try {
+        pastTransactions = await buildPastTransactions(userId);
+      } catch (err) {
+        console.error('Error fetching pastTransactions:', err);
+      }
+
       const sections = {
         todoList,
         propertyAttractivity,
         savedSearchResults,
         followedPropertyNews,
-        pastTransactions: mockPastTransactions,
+        pastTransactions,
         p2pEstimation: mockP2PEstimation,
         p2pReport: mockP2PReport,
         trainingCenter: mockTrainingCenter,
