@@ -196,6 +196,80 @@ const buildPastTransactions = async (userId) => {
   return { visible: true, _isMock: false, items };
 };
 
+// Shared: get reference postal code from the same 4 sources used by buildPastTransactions
+const getReferencePostalCode = async (userId) => {
+  // Source 1: most recent active saved alert
+  const alert = await db.alerts
+    .find({ user_id: userId, isDeleted: false, status: 'active' })
+    .sort({ updatedAt: -1 })
+    .limit(1)
+    .lean()
+    .then(r => r[0] || null);
+  if (alert?.filteredData) {
+    const pc = extractPostalCode(alert.filteredData.search);
+    if (pc) return pc;
+  }
+
+  // Source 2: last created property
+  const ownProp = await db.property
+    .find({ addedBy: userId, isDeleted: false })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .select('zipcode')
+    .lean()
+    .then(r => r[0] || null);
+  if (ownProp?.zipcode) return ownProp.zipcode;
+
+  // Source 3: quicksearches (empty collection — skip)
+
+  // Source 4: last followed property
+  const lastFollow = await db.followUnfollow
+    .find({ user_id: userId, follow_unfollow: true })
+    .sort({ createdAt: -1 })
+    .limit(1)
+    .lean()
+    .then(r => r[0] || null);
+  if (lastFollow?.property_id) {
+    const followedProp = await db.property
+      .findOne({ _id: lastFollow.property_id })
+      .select('zipcode')
+      .lean();
+    if (followedProp?.zipcode) return followedProp.zipcode;
+  }
+
+  return null;
+};
+
+// Builds P2P estimation section: sample of properties at user's reference postal code
+const buildP2PEstimation = async (userId) => {
+  const SAMPLE_SIZE = 6;
+  const postalCode = await getReferencePostalCode(userId);
+  if (!postalCode) return { ...mockP2PEstimation };
+
+  const query = { zipcode: postalCode, isDeleted: false, addedBy: { $ne: userId } };
+
+  const [total, props] = await Promise.all([
+    db.property.countDocuments(query),
+    db.property.find(query).select('images').limit(SAMPLE_SIZE).lean(),
+  ]);
+
+  if (props.length === 0) return { ...mockP2PEstimation };
+
+  const items = props.map(p => ({
+    propertyId: String(p._id),
+    imageUrl: resolvePropertyCoverUrl(p.images) || defaultCover,
+    route: `/property-details?id=${p._id}`,
+  }));
+
+  return {
+    visible: true,
+    _isMock: false,
+    totalPropertiesToEstimate: total,
+    items,
+    action: { ctaLabel: 'P2P Estimation', route: '/estimation' },
+  };
+};
+
 const toPropertyCard = (p) => ({
   propertyId: p._id || p.id,
   property: {
@@ -1702,13 +1776,21 @@ module.exports = {
         console.error('Error fetching pastTransactions:', err);
       }
 
+      // --- p2pEstimation: real properties at user's reference postal code ---
+      let p2pEstimation = mockP2PEstimation;
+      try {
+        p2pEstimation = await buildP2PEstimation(userId);
+      } catch (err) {
+        console.error('Error fetching p2pEstimation:', err);
+      }
+
       const sections = {
         todoList,
         propertyAttractivity,
         savedSearchResults,
         followedPropertyNews,
         pastTransactions,
-        p2pEstimation: mockP2PEstimation,
+        p2pEstimation,
         p2pReport: mockP2PReport,
         trainingCenter: mockTrainingCenter,
         propertySearchPipeline,
