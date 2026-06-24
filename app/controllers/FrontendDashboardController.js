@@ -555,25 +555,47 @@ module.exports = {
         ],
       };
 
-      // --- savedSearchResults: user's saved searches ---
-      const savedSearches = await db.savesearch.find({ searchBy: userId }).sort({ createdAt: -1 }).lean();
+      // --- savedSearchResults: user's saved search alerts ---
+      // Utilise la collection 'alerts' (avec name, filteredData) et non 'savesearch'
+      const buildAlertUrl = (fd) => {
+        const parts = [];
+        if (fd?.propertyType) parts.push(`propertyType=${encodeURIComponent(fd.propertyType)}`);
+        if (fd?.type) parts.push(`type=${encodeURIComponent(fd.type)}`);
+        if (fd?.zipcode) parts.push(`zipcode=${encodeURIComponent(fd.zipcode)}`);
+        if (fd?.search) parts.push(`search=${encodeURIComponent(fd.search)}`);
+        if (fd?.minPrice) parts.push(`minPrice=${fd.minPrice}`);
+        if (fd?.maxPrice) parts.push(`maxPrice=${fd.maxPrice}`);
+        if (fd?.minSurface) parts.push(`minSurface=${fd.minSurface}`);
+        if (fd?.maxSurface) parts.push(`maxSurface=${fd.maxSurface}`);
+        if (fd?.rooms) parts.push(`rooms=${fd.rooms}`);
+        parts.push('sort=createdAt', 'order=desc');
+        return `/properties?${parts.join('&')}`;
+      };
+      const savedSearches = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
       const savedSearchResults = {
         visible: true,
-        emptyState: savedSearches.length === 0 ? { message: 'Aucun saved search', ctaLabel: 'Nouvelle recherche', ctaRoute: '/properties' } : null,
+        emptyState: savedSearches.length === 0 ? { message: 'Aucune alerte de recherche', ctaLabel: 'Nouvelle recherche', ctaRoute: '/properties' } : null,
         _isMock: savedSearches.length === 0,
         cards: savedSearches.length > 0 ? await Promise.all(savedSearches.map(async (s) => {
-          // For previewProperties, pick up to 5 matching properties (best-effort)
+          // Compter les biens correspondants créés depuis la dernière consultation
           const qs = { isDeleted: false };
-          if (s.propertyType) qs.propertyType = s.propertyType;
-          if (s.zipcode) qs.zipcode = s.zipcode;
-          const preview = await db.property.find(qs).limit(5).lean();
+          const fd = s.filteredData || {};
+          if (fd.propertyType) qs.propertyType = fd.propertyType;
+          if (fd.type) qs.type = fd.type;
+          if (fd.zipcode) qs.zipcode = fd.zipcode;
+          if (s.lastViewedAt) qs.createdAt = { $gt: new Date(s.lastViewedAt) };
+          const [newCount, preview] = await Promise.all([
+            db.property.countDocuments(qs),
+            db.property.find({ isDeleted: false, ...(fd.propertyType ? { propertyType: fd.propertyType } : {}), ...(fd.zipcode ? { zipcode: fd.zipcode } : {}) }).limit(5).lean(),
+          ]);
+          const criteriaLabel = [fd.type, fd.propertyType, fd.search || fd.zipcode].filter(Boolean).join(' • ');
           return {
             savedSearchId: s._id,
-            name: s.searchLocation || `${s.propertyType || ''} ${s.zipcode || ''}`,
-            criteriaLabel: `${s.propertyType || 'Tout'}${s.searchLocation ? ' • ' + s.searchLocation : ''}`,
-            newResultsCount: s.searchByCount || 0,
+            name: s.name || criteriaLabel || 'Recherche sauvegardée',
+            criteriaLabel: criteriaLabel || s.name || '',
+            newResultsCount: newCount,
             previewProperties: preview.map(p => ({ id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, route: `/property-details?id=${p._id}` })),
-            action: { route: `/properties?searchId=${s._id}` },
+            action: { route: buildAlertUrl(fd) },
           };
         })) : [
           {
@@ -847,8 +869,10 @@ module.exports = {
               });
             }
 
-            // Card 9: SEND_TRANSACTION_DOCUMENTS (Owner perspective - lead requested documents)
-            if (isUserOwner && interest.documentRequested && (!interest.documents || Object.keys(interest.documents).length === 0)) {
+            // Card 9: SEND_TRANSACTION_DOCUMENTS (Owner perspective - Sale only)
+            // Un dossier vendeur n'existe pas pour les biens en location
+            const isSaleProperty = property && (property.propertyType === 'sale' || property.listingType === 'sale');
+            if (isUserOwner && isSaleProperty && interest.documentRequested && (!interest.documents || Object.keys(interest.documents).length === 0)) {
               todos.push({
                 id: `todo-send-transaction-documents-${interest._id}`,
                 type: 'SEND_TRANSACTION_DOCUMENTS',
@@ -866,7 +890,6 @@ module.exports = {
             // Card 10: SEND_OFFER (Lead perspective - Sale only, after visit hosted)
             // Inclut aussi les statuts post-visite où l'acheteur peut encore envoyer son offre
             const isVisitHosted = ['visit hosted', 'buyer requested for document', 'document send by owner'].includes(interest.funnelStatus);
-            const isSaleProperty = property && (property.propertyType === 'sale' || property.listingType === 'sale');
             // offerSubmitted/offerStatus ne sont pas mis à jour par l'app → utiliser funnelStatus comme source de vérité
             const offerFunnelStatuses = ['offer submit by user', 'offer submit by owner', 'offer accept by owner', 'preslot opened by owner', 'preslot accept by owner', 'saleslot accept by user', 'confirmation by user', 'transferred'];
             const hasSubmittedOffer = interest.offerSubmitted || interest.offerStatus === 'submitted' || offerFunnelStatuses.includes(interest.funnelStatus);
@@ -1206,30 +1229,37 @@ module.exports = {
           console.error('Error fetching unread messages for dashboard:', err);
         }
 
-        // --- Card 2: Saved searches with new results ---
+        // --- Card 2: Saved search alerts with new results ---
         try {
-          const savedSearches = await db.savesearch.find({ searchBy: userId }).lean();
+          const userAlerts = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
           
-          for (const search of savedSearches.slice(0, 3)) {
-            if (search.searchByCount > 0) {
+          for (const alert of userAlerts.slice(0, 3)) {
+            const fd = alert.filteredData || {};
+            const qs = { isDeleted: false };
+            if (fd.propertyType) qs.propertyType = fd.propertyType;
+            if (fd.type) qs.type = fd.type;
+            if (fd.zipcode) qs.zipcode = fd.zipcode;
+            if (alert.lastViewedAt) qs.createdAt = { $gt: new Date(alert.lastViewedAt) };
+            const newCount = await db.property.countDocuments(qs);
+            if (newCount > 0) {
               todos.push({
-                id: `todo-search-${search._id}`,
+                id: `todo-search-${alert._id}`,
                 type: 'NEW_SEARCH_RESULTS',
-                label: 'Consultez les nouveaux biens référencés',
+                label: `${newCount} nouveau${newCount > 1 ? 'x' : ''} bien${newCount > 1 ? 's' : ''} dans "${alert.name || 'votre recherche'}"`,
                 role: 'BUYER',
-                priority: properties.length + savedSearches.indexOf(search) + 1,
-                createdAt: search.updatedAt || search.createdAt,
+                priority: properties.length + userAlerts.indexOf(alert) + 1,
+                createdAt: alert.updatedAt || alert.createdAt,
                 searchInfo: {
-                  searchId: search._id,
-                  location: search.searchLocation || search.zipcode || 'Votre région',
-                  newResultsCount: search.searchByCount || 0,
+                  searchId: alert._id,
+                  location: fd.search || fd.zipcode || 'Votre région',
+                  newResultsCount: newCount,
                 },
-                action: { route: `/properties?searchId=${search._id}` },
+                action: { route: buildAlertUrl(fd) },
               });
             }
           }
         } catch (err) {
-          console.error('Error fetching saved searches for dashboard:', err);
+          console.error('Error fetching search alerts for dashboard:', err);
         }
 
         // --- Card 3: Services pending confirmation (delivered by pro, awaiting buyer confirmation) ---
