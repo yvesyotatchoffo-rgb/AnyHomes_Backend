@@ -17,28 +17,30 @@ module.exports = {
             }
             let blogsData = await Blogs.findOne({ title: title, isDeleted: false });
 
-            const findCategory = await db.blogCategories.findOne({ _id: data.categoryId });
-            if (!findCategory) {
+            const findPersona = await db.persona.findOne({ _id: data.categoryId, isDeleted: false });
+            if (!findPersona) {
                 return res.status(400).json({
                     success: false,
-                    message: "Category not found."
-                })
+                    message: "Persona not found."
+                });
             }
 
-            const findSubCategory = await db.blogSubCategories.findOne({ _id: data.subCategoryId });
-            if (!findSubCategory) {
+            const TrainingTopic = require('../models/trainingTopic.model');
+            const findTopic = await TrainingTopic.findOne({ _id: data.subCategoryId, isDeleted: false });
+            if (!findTopic) {
                 return res.status(400).json({
                     success: false,
-                    message: "Sub-Category not found."
-                })
+                    message: "Training topic not found."
+                });
             }
+
             if (!blogsData) {
                 data.addedBy = req.identity.id;
                 const createBlog = await Blogs.create(data);
                 return res.status(200).json({
                     success: true,
                     message: constants.BLOG.CREATED
-                })
+                });
             } else {
                 return res.status(400).json({
                     success: false,
@@ -66,12 +68,27 @@ module.exports = {
                     message: constants.BLOG.ID_MISSING
                 })
             }
-            let blogData = await Blogs.findOne({ _id: id, isDeleted: false }).populate('categoryId').populate('subCategoryId').populate('blogOwner', 'fullName email')
-            if (!blogData) {
+            const TrainingTopic = require('../models/trainingTopic.model');
+            let blogRaw = await Blogs.findOne({ _id: id, isDeleted: false }).populate('blogOwner', 'fullName email image');
+            if (!blogRaw) {
                 return res.status(400).json({
                     success: false,
                     message: constants.BLOG.NOT_FOUND
                 });
+            }
+            // Populate persona and training topic manually
+            let blogData = blogRaw.toObject();
+            // blogOwner is populated by .populate() → expose as blogOwnerData for consistency with listing endpoint
+            blogData.blogOwnerData = blogData.blogOwner || null;
+            if (blogData.categoryId) {
+                const persona = await db.persona.findOne({ _id: blogData.categoryId });
+                blogData.personaData = persona || null;
+                blogData.personaName = persona?.name || null;
+            }
+            if (blogData.subCategoryId) {
+                const topic = await TrainingTopic.findOne({ _id: blogData.subCategoryId });
+                blogData.topicData = topic ? topic.toJSON() : null;
+                blogData.topicName = topic?.name || null;
             }
 
             const contentLikeCount = Array.isArray(blogData.contentLike) ? blogData.contentLike.length : 0;
@@ -90,7 +107,7 @@ module.exports = {
             return res.status(200).json({
                 success: true,
                 data: {
-                    ...blogData.toObject(),
+                    ...blogData,
                     contentLikeCount,
                     contentDislikeCount,
                     isLikedByUser,
@@ -111,7 +128,7 @@ module.exports = {
 
     editBlogs: async (req, res) => {
         try {
-            const { id, contentLike, contentDislike, loggedinUser } = req.body;
+            const { id, contentLike, contentDislike, loggedinUser, title, description, categoryId, subCategoryId, banner, metaTitle, images, blogOwner, duration } = req.body;
             if (!id) {
                 return res.status(400).json({
                     success: false,
@@ -121,18 +138,34 @@ module.exports = {
 
             const updateQuery = {};
 
+            // Handle likes/dislikes
             if (contentLike === true) {
                 updateQuery.$addToSet = { contentLike: loggedinUser };
                 updateQuery.$pull = { contentDislike: loggedinUser };
             } else if (contentLike === false) {
                 updateQuery.$pull = { contentLike: loggedinUser };
             }
-
             if (contentDislike === true) {
                 updateQuery.$addToSet = { contentDislike: loggedinUser };
                 updateQuery.$pull = { ...updateQuery.$pull, contentLike: loggedinUser };
             } else if (contentDislike === false) {
                 updateQuery.$pull = { ...updateQuery.$pull, contentDislike: loggedinUser };
+            }
+
+            // Handle content fields
+            const $set = {};
+            if (title !== undefined) $set.title = title;
+            if (description !== undefined) $set.description = description;
+            if (categoryId !== undefined) $set.categoryId = categoryId;
+            if (subCategoryId !== undefined) $set.subCategoryId = subCategoryId;
+            if (banner !== undefined) $set.banner = banner;
+            if (metaTitle !== undefined) $set.metaTitle = metaTitle;
+            if (images !== undefined) $set.images = images;
+            if (blogOwner !== undefined) $set.blogOwner = blogOwner;
+            if (duration !== undefined) $set.duration = duration;
+
+            if (Object.keys($set).length > 0) {
+                updateQuery.$set = $set;
             }
 
             await Blogs.updateOne({ _id: id }, updateQuery);
@@ -229,8 +262,8 @@ module.exports = {
                 query.$or = [
                     { title: { $regex: search, $options: "i" } },
                     // { description: { $regex: search, $options: "i" } },
-                    { "categoryData.CategoryName": { $regex: search, $options: "i" } },
-                    { "subCategoryData.SubCategoryName": { $regex: search, $options: "i" } }
+                    { "personaData.name": { $regex: search, $options: "i" } },
+                    { "topicData.name": { $regex: search, $options: "i" } }
                 ];
             }
             query.isDeleted = false;
@@ -260,26 +293,25 @@ module.exports = {
                 query.blogOwner = new mongoose.Types.ObjectId(blogOwner);
             }
             const pipeline = [
-
                 {
                     $lookup: {
-                        from: "blogcategories",
+                        from: "personas",
                         localField: "categoryId",
                         foreignField: "_id",
-                        as: "categoryData",
+                        as: "personaData",
                     },
                 },
-                { $unwind: { path: "$categoryData", preserveNullAndEmptyArrays: true } },
+                { $unwind: { path: "$personaData", preserveNullAndEmptyArrays: true } },
 
                 {
                     $lookup: {
-                        from: "blogsubcategories",
+                        from: "trainingtopics",
                         localField: "subCategoryId",
                         foreignField: "_id",
-                        as: "subCategoryData",
+                        as: "topicData",
                     },
                 },
-                { $unwind: { path: "$subCategoryData", preserveNullAndEmptyArrays: true } },
+                { $unwind: { path: "$topicData", preserveNullAndEmptyArrays: true } },
 
                 {
                     $lookup: {
@@ -299,8 +331,10 @@ module.exports = {
                 {
                     $project: {
                         id: "$_id",
-                        title: { $toLower: "$title" },
+                        title: "$title",
+                        title_fr: "$title_fr",
                         description: "$description",
+                        description_fr: "$description_fr",
                         images: "$images",
                         status: "$status",
                         banner: 1,
@@ -314,13 +348,15 @@ module.exports = {
                         categoryId: 1,
                         blogOwner: 1,
                         duration: 1,
-                        category: "$categoryData.CategoryName",
-                        subCategory: "$subCategoryData.SubCategoryName",
-                        categoryData: "$categoryData",
-                        subCategoryData: "$subCategoryData",
+                        personaName: "$personaData.name",
+                        topicName: "$topicData.name",
+                        personaData: "$personaData",
+                        topicData: "$topicData",
                         blogOwnerData: "$blogOwnerData",
                         contentLikeCount: { $size: { $ifNull: ["$contentLike", []] } },
                         contentDislikeCount: { $size: { $ifNull: ["$contentDislike", []] } },
+                        viewCount: { $ifNull: ["$viewCount", 0] },
+                        personaKey: { $ifNull: ["$personaData.key", ""] },
                         isLikedByUser: {
                             $cond: {
                                 if: {
@@ -373,8 +409,31 @@ module.exports = {
                 success: false,
                 error: {
                     code: 500,
-                    message: "" + err,
+                    message: "" + error,
                 },
+            });
+        }
+    },
+
+    incrementView: async (req, res) => {
+        try {
+            const { id } = req.body;
+            if (!id) {
+                return res.status(400).json({ success: false, message: "Blog id is required" });
+            }
+            const blog = await Blogs.findByIdAndUpdate(
+                id,
+                { $inc: { viewCount: 1 } },
+                { new: true }
+            );
+            if (!blog) {
+                return res.status(404).json({ success: false, message: "Blog not found" });
+            }
+            return res.status(200).json({ success: true, viewCount: blog.viewCount });
+        } catch (error) {
+            return res.status(500).json({
+                success: false,
+                error: { code: 500, message: "" + error },
             });
         }
     },

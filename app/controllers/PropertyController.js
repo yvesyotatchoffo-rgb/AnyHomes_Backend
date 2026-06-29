@@ -1653,13 +1653,21 @@ module.exports = {
           .sort(sortquery)
           .skip(skipNo)
           .limit(Number(pageSize))
+          .populate('addedBy', 'firstName lastName fullName image accountType companyLogo featuredProfilePhoto username companyName')
           .lean();
+
+        // Normalise: expose populated user as addedBy_details
+        const docsWithOwner = docs.map(d => ({
+          ...d,
+          addedBy_details: d.addedBy && typeof d.addedBy === 'object' ? d.addedBy : {},
+          addedBy: d.addedBy?._id || d.addedBy,
+        }));
 
         return res.status(200).json({
           success: true,
           message: constants.PROPERTY.RETRIEVED,
           total,
-          data: docs,
+          data: docsWithOwner,
         });
       }
 

@@ -240,6 +240,127 @@ const getReferencePostalCode = async (userId) => {
   return null;
 };
 
+// Builds P2P report section: aggregated peer estimations for user's own properties
+const buildP2PReport = async (userId) => {
+  const properties = await db.property
+    .find({ addedBy: userId, isDeleted: false })
+    .select('_id propertyTitle rooms surface zipcode city country images createdAt')
+    .lean();
+
+  if (properties.length === 0) {
+    return {
+      visible: true,
+      _isMock: false,
+      emptyState: { message: 'Aucun bien dans votre portefeuille.' },
+      action: null,
+      properties: [],
+    };
+  }
+
+  const propIds = properties.map((p) => p._id);
+
+  const estimationsByProp = await db.peerEstimation.aggregate([
+    { $match: { propertyId: { $in: propIds } } },
+    {
+      $group: {
+        _id: '$propertyId',
+        count: { $sum: 1 },
+        mostRecent: { $max: '$createdAt' },
+        appropriate: { $sum: { $cond: [{ $eq: ['$referencePrice', 'appropriate'] }, 1, 0] } },
+        underEstimated: { $sum: { $cond: [{ $eq: ['$referencePrice', 'underestimated'] }, 1, 0] } },
+        overEstimated: { $sum: { $cond: [{ $eq: ['$referencePrice', 'expensive'] }, 1, 0] } },
+        maxPrice: { $max: '$userReasonablePrice' },
+        avgPrice: { $avg: '$userReasonablePrice' },
+        minPrice: { $min: '$userReasonablePrice' },
+        avgTitle: { $avg: '$ratePropertyTitle' },
+        avgPictures: { $avg: '$ratePropertyPictures' },
+        avgInteriorDesign: { $avg: '$rateInteriorDesign' },
+        avgLocation: { $avg: '$rateLocation' },
+        avgCouldLiveIn: { $avg: '$rateCouldYouLiveIn' },
+      },
+    },
+  ]);
+
+  const estimationsMap = {};
+  estimationsByProp.forEach((e) => { estimationsMap[String(e._id)] = e; });
+
+  const allEntries = properties.map((p) => {
+    const est = estimationsMap[String(p._id)];
+    const hasEstimations = !!(est && est.count > 0);
+
+    const entry = {
+      propertyId: String(p._id),
+      hasEstimations,
+      _sortKey: hasEstimations ? est.mostRecent : null,
+      _createdAt: p.createdAt || new Date(0),
+      property: {
+        title: p.propertyTitle || '',
+        rooms: p.rooms || 0,
+        surface: p.surface || 0,
+        postalCode: p.zipcode || '',
+        city: p.city || '',
+        country: p.country || 'France',
+        imageUrl: resolvePropertyCoverUrl(p.images) || defaultCover,
+      },
+      action: { route: '/social-estimation' },
+    };
+
+    if (hasEstimations) {
+      entry.pricing = {
+        appropriate: est.appropriate,
+        underEstimated: est.underEstimated,
+        overEstimated: est.overEstimated,
+        maxPrice: Math.round(est.maxPrice || 0),
+        avgPrice: Math.round(est.avgPrice || 0),
+        minPrice: Math.round(est.minPrice || 0),
+        maxUsers: est.count,
+        avgUsers: est.count,
+        minUsers: est.count,
+      };
+      const round1 = (v) => Math.round((v || 0) * 10) / 10;
+      entry.qualitativeAssessment = {
+        title: round1(est.avgTitle),
+        pictures: round1(est.avgPictures),
+        interiorDesign: round1(est.avgInteriorDesign),
+        location: round1(est.avgLocation),
+        couldLiveIn: round1(est.avgCouldLiveIn),
+        titleUsers: est.count,
+        picturesUsers: est.count,
+        interiorDesignUsers: est.count,
+        locationUsers: est.count,
+        couldLiveInUsers: est.count,
+      };
+    }
+
+    return entry;
+  });
+
+  // Sort: properties with estimations first (most recent first), then without (newest property first)
+  allEntries.sort((a, b) => {
+    if (a.hasEstimations && b.hasEstimations) return new Date(b._sortKey) - new Date(a._sortKey);
+    if (a.hasEstimations) return -1;
+    if (b.hasEstimations) return 1;
+    return new Date(b._createdAt) - new Date(a._createdAt);
+  });
+
+  const DISPLAY_LIMIT = 3;
+  const propertyEntries = allEntries.slice(0, DISPLAY_LIMIT).map((entry, index) => {
+    const out = { ...entry, defaultExpanded: entry.hasEstimations && index === 0 };
+    delete out._sortKey;
+    delete out._createdAt;
+    return out;
+  });
+
+  return {
+    visible: true,
+    _isMock: false,
+    emptyState: null,
+    action: null,
+    totalCount: allEntries.length,
+    properties: propertyEntries,
+  };
+};
+
 // Builds P2P estimation section: sample of properties at user's reference postal code
 const buildP2PEstimation = async (userId) => {
   const SAMPLE_SIZE = 6;
@@ -586,7 +707,7 @@ const mockTrainingCenter = {
       title: '5 conseils pour bien organiser une visite de votre bien',
       consumptionTime: '5 minutes',
       contentType: 'video',
-      route: '/training',
+      route: '/learning-center',
     },
     {
       id: 'train-3',
@@ -597,9 +718,111 @@ const mockTrainingCenter = {
       title: 'Comment optimiser votre annonce avant publication',
       consumptionTime: '4 minutes',
       contentType: 'written',
-      route: '/training',
+      route: '/learning-center',
     },
   ],
+};
+
+const resolveUserImg = (image) => {
+  if (!image) return null;
+  if (image.startsWith('http')) return image;
+  return `${BACK_WEB_URL}/img/${image}`;
+};
+
+const buildTrainingCenter = async () => {
+  try {
+    const mongoose = require('mongoose');
+    const [videos, articles] = await Promise.all([
+      db.funnelUrl
+        .find({ status: 'active' })
+        .populate('addedBy', 'fullName firstName image')
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .lean(),
+      db.blogs
+        .find({ status: 'active', isDeleted: false })
+        .populate('blogOwner', 'fullName firstName image')
+        .populate('categoryId', 'name')
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .lean(),
+    ]);
+
+    // Collect unique persona IDs from videos (type or topic that look like ObjectIds)
+    const personaIds = [...new Set(
+      videos.flatMap(v => [v.type, v.topic].filter(
+        val => val && mongoose.Types.ObjectId.isValid(val)
+      ))
+    )];
+    const personaMap = {};    // objectId -> name
+    const personaKeyMap = {}; // objectId -> key
+    if (personaIds.length > 0) {
+      const personas = await db.persona.find({ _id: { $in: personaIds } }).select('_id name key').lean();
+      personas.forEach(p => {
+        personaMap[p._id.toString()] = p.name;
+        personaKeyMap[p._id.toString()] = p.key || p.name?.toLowerCase().replace(/[^a-z0-9]+/g, '_') || '';
+      });
+    }
+
+    const resolveCategory = (val) => {
+      if (!val) return '';
+      if (mongoose.Types.ObjectId.isValid(val) && personaMap[val.toString()]) {
+        return personaMap[val.toString()];
+      }
+      return val;
+    };
+
+    const mapVideo = (v) => ({
+      id: v._id.toString(),
+      contentType: 'video',
+      title: v.title || '',
+      title_fr: v.title_fr || '',
+      consumptionTime: v.duration || '5 min',
+      categoryKey: personaKeyMap[v.type?.toString()] || null,
+      category: resolveCategory(v.type) || resolveCategory(v.topic) || '',
+      authorName: v.addedBy?.fullName || v.addedBy?.firstName || v.videoOwner || 'Bookaroo',
+      authorAvatarUrl: resolveUserImg(v.addedBy?.image),
+      imageUrl: v.image ? `${BACK_WEB_URL}/img/${v.image}` : null,
+      youtubeUrl: v.youtubeUrl || null,
+      route: '/learning-center',
+      _createdAt: v.createdAt,
+    });
+
+    const mapArticle = (a) => {
+      let imageUrl = null;
+      if (Array.isArray(a.images) && a.images.length > 0) {
+        const img = a.images[0];
+        imageUrl = typeof img === 'string' ? img : (img.file ? `${BACK_WEB_URL}/img/${img.file}` : null);
+      } else if (a.banner) {
+        imageUrl = a.banner;
+      }
+      return {
+        id: a._id.toString(),
+        contentType: 'article',
+        title: a.title || '',
+        title_fr: a.title_fr || '',
+        consumptionTime: a.duration || '3 min',
+        categoryKey: a.categoryId?.key || null,
+        category: a.categoryId?.name || '',
+        authorName: a.blogOwner?.fullName || a.blogOwner?.firstName || 'Bookaroo',
+        authorAvatarUrl: resolveUserImg(a.blogOwner?.image),
+        imageUrl,
+        route: `/blog-own-detail?blogId=${a._id}`,
+        _createdAt: a.createdAt,
+      };
+    };
+
+    const combined = [...videos.map(mapVideo), ...articles.map(mapArticle)]
+      .sort((a, b) => new Date(b._createdAt) - new Date(a._createdAt))
+      .slice(0, 3)
+      .map(({ _createdAt, ...item }) => item);
+
+    if (combined.length === 0) return mockTrainingCenter;
+
+    return { visible: true, _isMock: false, items: combined };
+  } catch {
+    return mockTrainingCenter;
+  }
 };
 
 const mockPropertySearchPipeline = {
@@ -615,6 +838,104 @@ const mockPropertySearchPipeline = {
     applicationSentToOwners: 5,
     purchaseProposalsSentToOwners: 5,
   },
+};
+
+// Builds owner pipeline section: real property metrics for each of the user's properties
+const buildOwnerPipeline = async (userId) => {
+  const properties = await db.property
+    .find({ addedBy: userId, isDeleted: false })
+    .select('_id propertyTitle propertyType rooms surface zipcode city country price propertyMonthlyCharges images propertyViewerCount createdAt')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (properties.length === 0) {
+    return {
+      visible: true,
+      _isMock: false,
+      emptyState: { message: 'Aucun bien dans votre portefeuille.', ctaRoute: '/property1', ctaLabel: 'Ajouter un bien' },
+      totalCount: 0,
+      properties: [],
+    };
+  }
+
+  const propIds = properties.map((p) => p._id);
+
+  const [interestAgg, reviewAgg] = await Promise.all([
+    db.interests.aggregate([
+      { $match: { propertyId: { $in: propIds } } },
+      {
+        $group: {
+          _id: '$propertyId',
+          totalInterests: { $sum: 1 },
+          profileAnalyzed: {
+            $sum: {
+              $cond: [{ $in: ['$funnelStatus', ['buyer requested for document', 'document send by owner', 'offer submit by user', 'confirmation by user', 'renter assigned', 'application submit by user', 'transferred']] }, 1, 0],
+            },
+          },
+          visitsHosted: {
+            $sum: {
+              $cond: [{ $in: ['$funnelStatus', ['visit hosted', 'review submit by user', 'buyer requested for document', 'document send by owner', 'offer submit by user', 'confirmation by user', 'renter assigned', 'application submit by user', 'transferred']] }, 1, 0],
+            },
+          },
+          visitReviews: { $sum: { $cond: [{ $eq: ['$funnelStatus', 'review submit by user'] }, 1, 0] } },
+          offersReceived: {
+            $sum: { $cond: [{ $in: ['$funnelStatus', ['offer submit by user', 'confirmation by user', 'transferred']] }, 1, 0] },
+          },
+          applicationsReceived: {
+            $sum: { $cond: [{ $in: ['$funnelStatus', ['application submit by user', 'renter assigned', 'transferred']] }, 1, 0] },
+          },
+        },
+      },
+    ]),
+    db.reviews.aggregate([
+      { $match: { propertyId: { $in: propIds }, isDeleted: false } },
+      { $group: { _id: '$propertyId', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const metricsMap = {};
+  interestAgg.forEach((e) => { metricsMap[String(e._id)] = e; });
+  const reviewMap = {};
+  reviewAgg.forEach((e) => { reviewMap[String(e._id)] = e.count; });
+
+  const propertyEntries = properties.map((p) => {
+    const m = metricsMap[String(p._id)] || {};
+    const isRent = p.propertyType === 'rent';
+    const isDirectory = p.propertyType === 'directory' || p.propertyType === 'offmarket';
+    return {
+      propertyId: String(p._id),
+      property: {
+        title: p.propertyTitle || '',
+        transactionType: isRent ? 'rent' : isDirectory ? 'directory' : 'sale',
+        rooms: p.rooms || 0,
+        surface: p.surface || 0,
+        postalCode: p.zipcode || '',
+        city: p.city || '',
+        country: p.country || 'France',
+        price: isRent ? (p.propertyMonthlyCharges || p.price || 0) : (p.price || 0),
+        pricePerSqm: (p.surface && p.price) ? Math.round(p.price / p.surface) : 0,
+        imageUrl: resolvePropertyCoverUrl(p.images) || defaultCover,
+      },
+      metrics: {
+        propertyProfileViews: p.propertyViewerCount || 0,
+        interestsReceived: m.totalInterests || 0,
+        buyerFinancialProfileAnalyzed: isRent ? 0 : (m.profileAnalyzed || 0),
+        renterFinancialProfileAnalyzed: isRent ? (m.profileAnalyzed || 0) : 0,
+        visitsHosted: m.visitsHosted || 0,
+        visitReviewsReceived: reviewMap[String(p._id)] || 0,
+        offerReceived: isRent ? 0 : (m.offersReceived || 0),
+        applicationReceived: isRent ? (m.applicationsReceived || 0) : 0,
+      },
+    };
+  });
+
+  return {
+    visible: true,
+    _isMock: false,
+    emptyState: null,
+    totalCount: propertyEntries.length,
+    properties: propertyEntries,
+  };
 };
 
 const mockOwnerPipeline = {
@@ -775,7 +1096,7 @@ module.exports = {
             pastTransactions: mockPastTransactions,
             p2pEstimation: mockP2PEstimation,
             p2pReport: mockP2PReport,
-            trainingCenter: mockTrainingCenter,
+            trainingCenter: await buildTrainingCenter(),
             propertySearchPipeline: mockPropertySearchPipeline,
             ownerPipeline: mockOwnerPipeline,
           },
@@ -1784,6 +2105,23 @@ module.exports = {
         console.error('Error fetching p2pEstimation:', err);
       }
 
+      // --- p2pReport: real aggregated estimations for user's own properties ---
+      let p2pReport = mockP2PReport;
+      try {
+        p2pReport = await buildP2PReport(userId);
+      } catch (err) {
+        console.error('Error fetching p2pReport:', err);
+      }
+
+      // --- ownerPipeline: real metrics for each of user's own properties ---
+      let ownerPipeline = mockOwnerPipeline;
+      try {
+        ownerPipeline = await buildOwnerPipeline(userId);
+      } catch (err) {
+        console.error('Error fetching ownerPipeline:', err);
+      }
+
+      const trainingCenter = await buildTrainingCenter();
       const sections = {
         todoList,
         propertyAttractivity,
@@ -1791,10 +2129,10 @@ module.exports = {
         followedPropertyNews,
         pastTransactions,
         p2pEstimation,
-        p2pReport: mockP2PReport,
-        trainingCenter: mockTrainingCenter,
+        p2pReport,
+        trainingCenter,
         propertySearchPipeline,
-        ownerPipeline: mockOwnerPipeline,
+        ownerPipeline,
       };
 
       const data = {

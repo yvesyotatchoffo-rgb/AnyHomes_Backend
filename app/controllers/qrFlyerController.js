@@ -68,7 +68,7 @@ function getPublicPropertyUrl(propertyId) {
 function normalizePhoto(photo, index) {
   const url = getPhotoUrl(photo);
   return {
-    id: photo && photo.fileName ? photo.fileName : String(index),
+    id: getPhotoIdentifier(photo, index),
     url,
     isCover: index === 0,
     originalName: photo && photo.originalname ? photo.originalname : null,
@@ -125,94 +125,64 @@ async function buildMetricsSnapshot(property) {
   };
 }
 
-async function renderFlyerHtml({ title, summary, selectedPhotoUrl, qrCodeDataUrl, metrics, publicUrl }) {
-  const metricItems = metrics
-    .map(
-      (metric) => `
-      <div style="flex:1; min-width:120px; padding:10px; border:1px solid #e6e6e6; border-radius:12px; margin:6px; background:#ffffff;">
-        <div style="font-size:12px; color:#666; text-transform: uppercase; letter-spacing:0.05em;">${metric.label}</div>
-        <div style="font-size:24px; font-weight:700; color:#111; margin-top:6px;">${metric.value}</div>
-      </div>`
-    )
-    .join('');
-
-  return `
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>QR Flyer</title>
-      <style>
-        body { margin:0; font-family: Arial, sans-serif; background:#f2f3f7; }
-        .page { width: 1200px; min-height: 1700px; background: #ffffff; padding: 48px; box-sizing: border-box; }
-        .brand { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
-        .brand__title { font-size: 36px; font-weight: 800; color: #222; }
-        .brand__tag { font-size: 14px; color: #999; text-transform: uppercase; letter-spacing: 0.16em; }
-        .hero { display: flex; gap: 24px; margin-bottom: 32px; }
-        .hero__image { width: 62%; border-radius: 24px; overflow: hidden; background:#eee; }
-        .hero__image img { width:100%; height:100%; object-fit: cover; }
-        .hero__sidebar { width: 38%; display: flex; flex-direction: column; justify-content: space-between; }
-        .card { background:#f8f9fb; border-radius: 24px; padding: 24px; box-sizing: border-box; }
-        .headline { font-size: 32px; font-weight: 800; line-height: 1.05; color: #222; margin-bottom: 16px; }
-        .body-text { font-size: 18px; line-height: 1.5; color: #444; margin-bottom: 24px; }
-        .cta { font-size: 16px; color: #fff; background: #5a3bfb; border-radius: 999px; padding: 16px 24px; display: inline-block; text-decoration: none; }
-        .qr-section { display: flex; align-items: center; gap: 20px; margin-top: 16px; }
-        .qr-box { width: 260px; height: 260px; background: #fff; border:1px solid #e6e6e6; border-radius: 24px; display:flex; align-items:center; justify-content:center; }
-        .qr-box img { max-width: 220px; max-height: 220px; }
-        .qr-copy { font-size: 14px; color: #666; line-height:1.6; }
-        .metrics { display: flex; flex-wrap: wrap; margin-top: 24px; }
-        .footer { display: flex; justify-content: space-between; margin-top: 48px; padding-top: 24px; border-top: 1px solid #eee; }
-        .footer-left { max-width: 70%; }
-        .footer-left h2 { font-size: 18px; margin: 0 0 10px; color: #111; }
-        .footer-left p { margin: 0; color: #666; line-height:1.5; }
-        .footer-right { text-align: right; }
-        .brand-pill { display: inline-block; background:#5a3bfb; color:#fff; padding:10px 18px; border-radius:999px; font-weight:700; font-size:14px; }
-      </style>
-    </head>
-    <body>
-      <div class="page">
-        <div class="brand">
-          <div>
-            <div class="brand__title">AnyHomes QR Flyer</div>
-            <div class="brand__tag">100% Gratuit • AnyHomes.fr</div>
-          </div>
-          <div class="brand-pill">V1</div>
+async function renderFlyerHtml({ selectedPhotoUrl, qrCodeDataUrl, propertyRef }) {
+  const logoUrl = `${BACK_WEB_URL}/anyhomes-logo-white.png`;
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AnyHomes QR Poster</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { margin: 0; padding: 0; width: 1600px; height: 1200px; overflow: hidden; background: #111; }
+      .poster { position: relative; width: 1600px; height: 1200px; overflow: hidden; font-family: Arial, Helvetica, sans-serif; }
+      .bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+      .left-overlay { position: absolute; left: 0; top: 0; width: 60%; height: 100%; background: rgba(0,0,0,0.62); z-index: 1; }
+      .content { position: absolute; top: 0; left: 0; bottom: 0; width: 60%; z-index: 2; display: flex; flex-direction: column; justify-content: space-between; padding: 270px 64px 40px 64px; }
+      .headline { color: #fff; font-size: 60px; font-weight: 900; text-transform: uppercase; line-height: 1.05; letter-spacing: -1px; margin-bottom: 28px; }
+      .subtext { color: #fff; font-size: 34px; font-weight: 700; line-height: 1.45; margin-bottom: 28px; max-width: 660px; }
+      .bullets { list-style: none; padding: 0; margin: 0; }
+      .bullets li { color: #fff; font-size: 32px; line-height: 1.55; padding-left: 30px; position: relative; margin-bottom: 12px; }
+      .bullets li::before { content: '•'; position: absolute; left: 0; }
+      .bullets li strong { font-weight: 700; }
+      .logo-block { color: #fff; display: flex; flex-direction: column; align-items: flex-start; position: relative; left: -30px; top: 30px; }
+      .logo-img { height: 102px; width: auto; display: block; margin-bottom: 4px; }
+      .logo-tagline { font-size: 26px; font-weight: 800; line-height: 1.45; color: #fff; margin-left: 24px; position: relative; top: -25px; }
+      .qr-card { position: absolute; top: 50%; left: 80%; transform: translate(-50%, -50%); z-index: 3; background: #fff; border-radius: 32px; padding: 46px 24px 40px 24px; display: flex; flex-direction: column; align-items: center; min-width: 504px; box-shadow: 0 8px 40px rgba(0,0,0,0.22); }
+      .qr-img { width: 359px; height: 359px; display: block; }
+      .qr-label { font-size: 32px; font-weight: 700; color: #111; text-align: center; margin-top: 24px; line-height: 1.35; max-width: 500px; }
+      .qr-sublabel { font-size: 22px; color: #555; text-align: center; margin-top: 10px; }
+      .qr-ref { font-size: 19px; color: #aaa; text-align: center; margin-top: 8px; letter-spacing: 1px; }
+    </style>
+  </head>
+  <body>
+    <div class="poster">
+      <img class="bg-img" src="${selectedPhotoUrl || ''}" alt="" />
+      <div class="left-overlay"></div>
+      <div class="content">
+        <div class="top-block">
+          <div class="headline">NE VOUS ARR&Ecirc;TEZ PAS<br/>&Agrave; CETTE ANNONCE</div>
+          <div class="subtext">D&eacute;couvrez sur AnyHomes.fr ce que cette annonce ne montre pas.</div>
+          <ul class="bullets">
+            <li><strong>Plus d&rsquo;informations sur le bien :</strong> revenus, d&eacute;penses, travaux r&eacute;alis&eacute;s&hellip;</li>
+            <li><strong>Transaction guid&eacute;e</strong> &agrave; chaque &eacute;tape</li>
+            <li><strong>Coach IA</strong> pour vous accompagner</li>
+          </ul>
         </div>
-        <div class="hero">
-          <div class="hero__image">
-            <img src="${selectedPhotoUrl || ''}" alt="Property photo" />
-          </div>
-          <div class="hero__sidebar">
-            <div class="card">
-              <div class="headline">Scannez le QR Code pour découvrir ce bien</div>
-              <div class="body-text">${title}</div>
-              <div class="body-text">${summary}</div>
-              <a class="cta" href="${publicUrl}">Voir l'annonce</a>
-              <div class="qr-section">
-                <div class="qr-box"><img src="${qrCodeDataUrl}" alt="QR Code" /></div>
-                <div>
-                  <div class="body-text"><strong>Scannez-moi</strong></div>
-                  <div class="qr-copy">Ce QR Code envoie directement vers la page publique du bien.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="metrics">
-          ${metricItems}
-        </div>
-        <div class="footer">
-          <div class="footer-left">
-            <h2>AnyHomes</h2>
-            <p>Promotion de votre bien sans agence, 100% gratuit.</p>
-          </div>
-          <div class="footer-right">
-            <p>URL publique :</p>
-            <p><strong>${publicUrl}</strong></p>
-          </div>
+        <div class="logo-block">
+          <img class="logo-img" src="${logoUrl}" alt="AnyHomes" />
+          <div class="logo-tagline">Vendre et acheter un bien immobilier<br/>seul en &eacute;tant bien accompagn&eacute;</div>
         </div>
       </div>
-    </body>
-  </html>`;
+      <div class="qr-card">
+        <img class="qr-img" src="${qrCodeDataUrl}" alt="QR Code" />
+        <div class="qr-label">Scannez pour d&eacute;couvrir<br/>le profil complet</div>
+        <div class="qr-sublabel">Acc&egrave;s gratuit sur AnyHomes.fr</div>
+        ${propertyRef ? `<div class="qr-ref">R&eacute;f : ${propertyRef}</div>` : ''}
+      </div>
+    </div>
+  </body>
+</html>`;
 }
 
 async function launchBrowser() {
@@ -222,19 +192,29 @@ async function launchBrowser() {
 async function takeScreenshot(html, outputPath, format) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
+  await page.setViewport({ width: 1600, height: 1200, deviceScaleFactor: 1 });
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.setViewport({ width: 1200, height: 1700, deviceScaleFactor: 2 });
   if (format === 'pdf') {
-    await page.pdf({ path: outputPath, format: 'A4', printBackground: true, margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' } });
+    await page.pdf({
+      path: outputPath,
+      width: '1600px',
+      height: '1200px',
+      printBackground: true,
+      margin: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
   } else {
-    await page.screenshot({ path: outputPath, type: format, fullPage: true });
+    await page.screenshot({
+      path: outputPath,
+      type: format,
+      clip: { x: 0, y: 0, width: 1600, height: 1200 },
+    });
   }
   await browser.close();
 }
 
 exports.listOwnerProperties = async (req, res) => {
   try {
-    const userId = req.query.userId || (req.identity && req.identity._id);
+    const userId = req.identity && req.identity._id;
     const { search, page = 1, limit = 30 } = req.query;
     const query = {
       addedBy: userId,
@@ -291,6 +271,9 @@ exports.listOwnerProperties = async (req, res) => {
           ? {
               id: latestFlyer._id,
               previewImageUrl: latestFlyer.previewImageUrl,
+              pdfUrl: latestFlyer.pdfUrl,
+              pngUrl: latestFlyer.pngUrl,
+              jpgUrl: latestFlyer.jpgUrl,
               scansCount: latestFlyer.scansCount,
               lastScanAt: latestFlyer.lastScanAt,
               createdAt: latestFlyer.createdAt,
@@ -318,7 +301,7 @@ async function findLatestFlyerByProperty(propertyId, ownerId) {
 
 exports.listFlyers = async (req, res) => {
   try {
-    const userId = req.query.userId || (req.identity && req.identity._id);
+    const userId = req.identity && req.identity._id;
     const { propertyId, page = 1, limit = 30 } = req.query;
     const query = { ownerId: userId, isDeleted: false };
 
@@ -591,41 +574,16 @@ exports.createFlyer = async (req, res) => {
       });
     }
 
-    const metricsSnapshot = property
-      ? await buildMetricsSnapshot(property)
-      : { likes: 0, followers: 0, views: 0, shares: 0, messages: 0, interestsReceived: 0 };
-    const selectedMetricsSnapshot = {};
-    selectedMetrics.forEach((metric) => {
-      selectedMetricsSnapshot[metric] = metricsSnapshot[metric] ?? 0;
-    });
-
     ensureQrFlyerDir();
     const token = generateToken();
     const trackUrl = `${BACK_WEB_URL}/qr/${token}`;
     const qrCodeDataUrl = await qrcode.toDataURL(trackUrl, { errorCorrectionLevel: 'H', margin: 1, width: 360 });
-    const publicUrl = getPublicPropertyUrl(property?._id || guestProperty.propertyId);
     const selectedPhotoUrl = getPhotoUrl(selectedPhoto);
 
-    const metricMap = {
-      likes: 'Likes',
-      views: 'Vues',
-      shares: 'Partages',
-      followers: 'Followers',
-      interestsReceived: 'Sollicitations',
-      messages: 'Messages',
-    };
-
     const html = await renderFlyerHtml({
-      title: property?.propertyTitle || property?.name || guestProperty.title || 'Sans titre',
-      summary: property ? buildPropertySummary(property) : guestProperty.summary,
       selectedPhotoUrl,
       qrCodeDataUrl,
-      metrics: selectedMetrics.map((key) => ({
-        key,
-        label: metricMap[key] || key,
-        value: selectedMetricsSnapshot[key] ?? 0,
-      })),
-      publicUrl,
+      propertyRef: property?.propertyRef || null,
     });
 
     const pdfFileName = `${token}.pdf`;
@@ -650,9 +608,8 @@ exports.createFlyer = async (req, res) => {
         ownerId: userId,
         propertyId: guestProperty.propertyId,
         selectedPhoto: normalizePhoto(selectedPhoto, 0),
-        selectedMetrics,
-        displayedMetricsSnapshot: selectedMetricsSnapshot,
-        publicUrl,
+        selectedMetrics: [],
+        displayedMetricsSnapshot: {},
         previewImageUrl: `${BACK_WEB_URL}/qr-flyers/${previewFileName}`,
         pdfUrl: `${BACK_WEB_URL}/qr-flyers/${pdfFileName}`,
         pngUrl: `${BACK_WEB_URL}/qr-flyers/${pngFileName}`,
@@ -666,9 +623,8 @@ exports.createFlyer = async (req, res) => {
         ownerId: userId,
         propertyId: property._id,
         selectedPhoto: normalizePhoto(selectedPhoto, 0),
-        selectedMetrics,
-        displayedMetricsSnapshot: selectedMetricsSnapshot,
-        publicUrl,
+        selectedMetrics: [],
+        displayedMetricsSnapshot: {},
         previewImageUrl: `${BACK_WEB_URL}/qr-flyers/${previewFileName}`,
         pdfUrl: `${BACK_WEB_URL}/qr-flyers/${pdfFileName}`,
         pngUrl: `${BACK_WEB_URL}/qr-flyers/${pngFileName}`,
@@ -771,5 +727,72 @@ exports.trackQr = async (req, res) => {
     return res.redirect(flyer.publicUrl || FRONT_WEB_URL);
   } catch (err) {
     return res.status(500).send('Erreur serveur');
+  }
+};
+
+// ─── ADMIN ───────────────────────────────────────────────────────────────────
+
+exports.adminStats = async (req, res) => {
+  try {
+    const { period = 'day' } = req.query;
+
+    const [totalFlyers, totalScansAgg, flyersWithScans, lastFlyerArr] = await Promise.all([
+      db.qrFlyers.countDocuments({ isDeleted: false }),
+      db.qrFlyers.aggregate([{ $match: { isDeleted: false } }, { $group: { _id: null, total: { $sum: '$scansCount' } } }]),
+      db.qrFlyers.countDocuments({ isDeleted: false, scansCount: { $gt: 0 } }),
+      db.qrFlyers.find({ isDeleted: false, lastScanAt: { $ne: null } }).sort({ lastScanAt: -1 }).limit(1).lean(),
+    ]);
+
+    const totalScans = totalScansAgg[0]?.total || 0;
+    const avgScans = totalFlyers > 0 ? (totalScans / totalFlyers).toFixed(1) : 0;
+    const lastScanAt = lastFlyerArr[0]?.lastScanAt || null;
+
+    const groupFormat = period === 'month' ? '%Y-%m' : period === 'week' ? '%Y-%U' : '%Y-%m-%d';
+    const daysBack = period === 'month' ? 365 : period === 'week' ? 84 : 30;
+    const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+    const [creationEvolution, scanEvolution] = await Promise.all([
+      db.qrFlyers.aggregate([
+        { $match: { isDeleted: false, createdAt: { $gte: since } } },
+        { $group: { _id: { $dateToString: { format: groupFormat, date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      db.qrFlyers.aggregate([
+        { $match: { isDeleted: false, lastScanAt: { $gte: since } } },
+        { $group: { _id: { $dateToString: { format: groupFormat, date: '$lastScanAt' } }, scans: { $sum: '$scansCount' } } },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    const allDates = [...new Set([...creationEvolution.map(d => d._id), ...scanEvolution.map(d => d._id)])].sort();
+    const creationMap = Object.fromEntries(creationEvolution.map(d => [d._id, d.count]));
+    const scanMap = Object.fromEntries(scanEvolution.map(d => [d._id, d.scans]));
+    const evolution = allDates.map(date => ({ date, created: creationMap[date] || 0, scans: scanMap[date] || 0 }));
+
+    return res.json({ success: true, data: { totalFlyers, totalScans, flyersWithScans, avgScans, lastScanAt, evolution } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+exports.adminListFlyers = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [flyers, total] = await Promise.all([
+      db.qrFlyers.find({ isDeleted: false })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('ownerId', 'firstName lastName email')
+        .populate('propertyId', 'title propertyRef city')
+        .lean(),
+      db.qrFlyers.countDocuments({ isDeleted: false }),
+    ]);
+
+    return res.json({ success: true, data: flyers, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
 };

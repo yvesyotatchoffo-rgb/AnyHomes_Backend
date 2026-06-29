@@ -1270,7 +1270,36 @@ exports.initializeSocket = function (startServer) {
               isFollowed: { $gt: [{ $size: "$followProperties" }, 0] }
             }
           },
-          { $sample: { size: 100 } },
+          // Lookup active campaigns for this property to enable priority sorting
+          {
+            $lookup: {
+              from: "peercampaigns",
+              let: { propId: "$_id" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$propertyId", "$$propId"] },
+                        { $eq: ["$status", "active"] },
+                        { $gte: ["$endDate", new Date()] }
+                      ]
+                    }
+                  }
+                }
+              ],
+              as: "activeCampaigns"
+            }
+          },
+          {
+            $addFields: {
+              hasCampaign: { $gt: [{ $size: "$activeCampaigns" }, 0] },
+              // Random value within each priority group for fair shuffling
+              _sortRand: { $rand: {} }
+            }
+          },
+          // Campaign properties first, then random within each group
+          { $sort: { hasCampaign: -1, _sortRand: 1 } },
           { $skip: skip },
           { $limit: parseInt(count) },
           {
@@ -1295,7 +1324,8 @@ exports.initializeSocket = function (startServer) {
               referencePrice: 1,
               energy_efficient: 1,
               isLiked: 1,
-              isFollowed: 1
+              isFollowed: 1,
+              hasCampaign: 1
             }
           }
         ]

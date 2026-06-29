@@ -218,10 +218,26 @@ module.exports = (mongoose) => {
             pricePerSqm: { type: Number },
             shareCount: { type: Number, default: 0 },
             propertyViewerCount: { type: Number, default: 0 },
-            directoryPurchaseProsals: { type: String, enum: ["sale", "rent", "both"] }
+            directoryPurchaseProsals: { type: String, enum: ["sale", "rent", "both"] },
+            propertyRef: { type: String, unique: true, sparse: true, index: true }
         },
         { timestamps: true }
     );
+
+    // Auto-generate a unique human-readable reference on first save
+    schema.pre('save', async function (next) {
+        if (this.isNew && !this.propertyRef) {
+            const Property = mongoose.model('properties');
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let ref, exists;
+            do {
+                ref = 'AH-' + Array.from({ length: 5 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                exists = await Property.findOne({ propertyRef: ref });
+            } while (exists);
+            this.propertyRef = ref;
+        }
+        next();
+    });
 
     schema.method("toJSON", function () {
         const { __v, _id, ...object } = this.toObject();

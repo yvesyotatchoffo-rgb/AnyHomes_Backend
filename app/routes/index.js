@@ -59,6 +59,8 @@ router.use("/dashboard", require("./frontendDashboard.routes.js"));
 router.use("/api/dashboard", require("./frontendDashboard.routes.js"));
 router.use("/score", require("./score.routes"));
 router.use("/scoreParameters", require("./scoreParameters.routes"));
+router.use("/persona", require("./persona.routes"));
+router.use("/trainingTopic", require("./trainingTopic.routes"));
 
 // ── Marketplace de services ────────────────────────────────────────────────
 router.use("/marketplace", require("../modules/services-marketplace/routes/public"));

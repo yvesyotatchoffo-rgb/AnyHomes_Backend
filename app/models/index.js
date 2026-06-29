@@ -78,5 +78,6 @@ db.claimOwnerships = require("./claimOwnerships.model.js")(mongoose)
 db.dashboardPreferences = require("./dashboardPreferences.model.js")(mongoose)
 db.activityLog = require("./activityLog.model.js")(mongoose)
 db.propertyActivityLog = require("./propertyActivityLog.model.js")(mongoose)
+db.persona = require("./persona.model.js")(mongoose)
 
 module.exports = db;

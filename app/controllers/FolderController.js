@@ -54,6 +54,7 @@ const guestFolderDetails = {
         likeCount: 12,
         followerCount: 8,
         content: "Bel appartement familial situé au coeur de Paris.",
+        addedBy_details: { firstName: "Sophie", lastName: "Martin", username: "sophiem", accountType: "individual", image: null },
       },
       {
         _id: "guest-property-2",
@@ -73,6 +74,7 @@ const guestFolderDetails = {
         likeCount: 18,
         followerCount: 15,
         content: "Appartement spacieux avec vue sur la Seine.",
+        addedBy_details: { firstName: "Marc", lastName: "Dupont", username: "marcd", accountType: "pro", companyName: "Immo Paris", featuredProfilePhoto: null },
       },
     ],
   },
@@ -97,6 +99,7 @@ const guestFolderDetails = {
         likeCount: 6,
         followerCount: 4,
         content: "Studio idéalement placé pour les études.",
+        addedBy_details: { firstName: "Julie", lastName: "Bernard", username: "julieb", accountType: "individual", image: null },
       },
       {
         _id: "guest-property-4",
@@ -116,6 +119,7 @@ const guestFolderDetails = {
         likeCount: 10,
         followerCount: 7,
         content: "Petit logement étudiant proche des transports.",
+        addedBy_details: { firstName: "Thomas", lastName: "Leroy", username: "thomasl", accountType: "individual", image: null },
       },
     ],
   },
@@ -140,6 +144,7 @@ const guestFolderDetails = {
         likeCount: 9,
         followerCount: 5,
         content: "Maison de vacances proche de la mer.",
+        addedBy_details: { firstName: "Claire", lastName: "Moreau", username: "clairem", accountType: "pro", companyName: "Bretagne Immobilier", featuredProfilePhoto: null },
       },
       {
         _id: "guest-property-6",
@@ -159,6 +164,7 @@ const guestFolderDetails = {
         likeCount: 14,
         followerCount: 9,
         content: "Spacieuse villa de vacances avec jardin et piscine.",
+        addedBy_details: { firstName: "Antoine", lastName: "Girard", username: "antoineg", accountType: "individual", image: null },
       },
     ],
   },
@@ -233,7 +239,7 @@ module.exports = {
           if (propertyType) {
             query.propertyType = propertyType;
           }
-          let find_property = await db.property.findOne(query);
+          let find_property = await db.property.findOne(query).populate('addedBy', 'firstName lastName fullName image accountType companyLogo featuredProfilePhoto username companyName');
           let find_likes = await db.favorites.findOne({
             property_id: ids,
             user_id: req.identity.id,
@@ -253,9 +259,11 @@ module.exports = {
               follow_unfollow: true,
             });
             propertyWithLikes = {
-              ...find_property.toObject(), // Convert Mongoose doc to plain object
-              favourite_details: find_likes ? find_likes.like : null, // If found, add like data, otherwise null
-              followunfollows_details: find_follwers ? find_follwers.follow_unfollow : null, // If found, add follow data, otherwise null
+              ...find_property.toObject(),
+              addedBy_details: find_property.addedBy && typeof find_property.addedBy === 'object' ? find_property.addedBy : {},
+              addedBy: find_property.addedBy?._id || find_property.addedBy,
+              favourite_details: find_likes ? find_likes.like : null,
+              followunfollows_details: find_follwers ? find_follwers.follow_unfollow : null,
               likeCount: likeCount,
               followerCount: followerCount,
             };

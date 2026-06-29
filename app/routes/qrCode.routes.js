@@ -29,4 +29,8 @@ router.get('/debug', ctrl.debugPing);
 router.get('/flyers/:flyerId/download', ctrl.downloadFlyer);
 router.delete('/flyers/:flyerId', ctrl.deleteFlyer);
 
+// Admin routes
+router.get('/admin/stats', ctrl.adminStats);
+router.get('/admin/flyers', ctrl.adminListFlyers);
+
 module.exports = router;

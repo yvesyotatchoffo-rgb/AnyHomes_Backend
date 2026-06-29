@@ -63,9 +63,11 @@ module.exports = {
       });
     }
 
-    const hasViewed = funnel.viewersId.includes(viewerId);
+    const hasViewed = req.isGuest ? false : funnel.viewersId.includes(viewerId);
     if (!hasViewed) {
-      funnel.viewersId.push(viewerId);
+      if (!req.isGuest) {
+        funnel.viewersId.push(viewerId);
+      }
       funnel.viewCount = (funnel.viewCount || 0) + 1;
       await funnel.save();
     }
