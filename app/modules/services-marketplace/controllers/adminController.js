@@ -1136,10 +1136,10 @@ exports.resolveLitigation = async (req, res) => {
   try {
     const lang = req.query.lang || 'fr';
     const { ServiceOrder } = getModels(lang);
-    const { decision } = req.body; // 'refund' | 'release'
+    const { decision } = req.body; // 'refund' | 'release' | 'close'
 
-    if (!['refund', 'release'].includes(decision)) {
-      return res.status(400).json({ success: false, message: 'decision doit être "refund" ou "release"' });
+    if (!['refund', 'release', 'close'].includes(decision)) {
+      return res.status(400).json({ success: false, message: 'decision doit être "refund", "release" ou "close"' });
     }
 
     const order = await ServiceOrder.findById(req.params.id);
@@ -1162,7 +1162,7 @@ exports.resolveLitigation = async (req, res) => {
       order.status = 'refunded';
       order.refundedAt = new Date();
       order.payoutStatus = 'cancelled';
-    } else {
+    } else if (decision === 'release') {
       // ── Capture Stripe : libère les fonds vers le pro ────────────────────
       if (order.stripePaymentIntentId) {
         try {
@@ -1176,14 +1176,22 @@ exports.resolveLitigation = async (req, res) => {
       order.status = 'payout_released';
       order.payoutReleasedAt = new Date();
       order.payoutStatus = 'released';
+    } else {
+      // ── Clôture sans action financière : restaure le statut avant ouverture du litige
+      order.status = order.preLitigationStatus || 'delivered_by_pro';
     }
 
     await order.save();
 
+    let message;
+    if (decision === 'refund') message = 'Remboursement acheteur effectué';
+    else if (decision === 'release') message = 'Paiement libéré vers le pro';
+    else message = 'Litige clôturé — transaction en cours sans action financière';
+
     return res.json({
       success: true,
       data: order,
-      message: decision === 'refund' ? 'Remboursement acheteur effectué' : 'Paiement libéré vers le pro',
+      message,
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });

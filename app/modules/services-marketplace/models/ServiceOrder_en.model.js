@@ -28,6 +28,7 @@ const ServiceOrderEnSchema = new mongoose.Schema({
   attachments: { type: [{ name: String, url: String, size: Number, mimeType: String }], default: [] },
   litigationDescription: { type: String, default: null },
   litigationInitiatedBy: { type: String, enum: ['buyer', 'pro'], default: null },
+  preLitigationStatus: { type: String, default: null },
   confirmedAt: { type: Date },
   cancelledAt: { type: Date },
   refundedAt: { type: Date },

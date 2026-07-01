@@ -625,6 +625,7 @@ module.exports = {
         serviceAccessibility,
         outside,
         add_more_step,
+        contact,
         environment,
         leisure,
         ancilliary,
@@ -812,6 +813,9 @@ module.exports = {
           query.add_more_step = false;
         }
       }
+      if (contact === "true") {
+        query.contact = true;
+      }
       if (addedBy) {
         const addedById = parseObjectId(addedBy);
         if (addedById) {
@@ -927,12 +931,15 @@ module.exports = {
           _id: loggedInUser
         });
         if (loggedInUserData) {
-          const userSaleScore = Number(loggedInUserData?.financingReferenceScore ?? 0);
+          // Use -1 when score is not yet calculated so that even threshold=0 ("Tout le monde")
+          // requires a computed buyer score — users with no score are excluded from all off-market listings.
+          const hasCalculatedSaleScore = loggedInUserData?.financingReferenceScore != null;
+          const userSaleScore = hasCalculatedSaleScore ? Number(loggedInUserData.financingReferenceScore) : -1;
           const userRole = loggedInUserData?.role;
           const isAdminUser = userRole === "admin" || userRole === "staff";
 
           if (offMarket === "true" && !isAdminUser) {
-            const saleThreshold = Math.min(100, Math.max(0, userSaleScore));
+            const saleThreshold = hasCalculatedSaleScore ? Math.min(100, Math.max(0, userSaleScore)) : -1;
             financingProbabilityMatch = {
               $or: [
                 { addedBy: loggedInUser },

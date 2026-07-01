@@ -740,6 +740,11 @@ module.exports = {
             userReasonablePrice: 1,
             currentPropReferencePrice: 1,
             currentPricePerSqm: 1,
+            ratePropertyTitle: 1,
+            ratePropertyPictures: 1,
+            rateInteriorDesign: 1,
+            rateLocation: 1,
+            rateCouldYouLiveIn: 1,
             comment: 1,
             createdAt: 1,
 
@@ -749,6 +754,7 @@ module.exports = {
             campaignName: "$campaign.campaignName",
 
             user: {
+              _id: "$user._id",
               fullName: "$user.fullName"
             },
 

@@ -573,6 +573,7 @@ exports.openLitigation = async (req, res) => {
       return res.status(400).json({ success: false, message: `Impossible d'ouvrir un litige sur une commande au statut : ${order.status}` });
     }
 
+    order.preLitigationStatus = order.status;
     order.status = 'litigation_opened';
     order.litigationOpenedAt = new Date();
     order.litigationDescription = String(req.body.description || '').trim() || null;

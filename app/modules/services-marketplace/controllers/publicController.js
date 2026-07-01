@@ -1028,6 +1028,7 @@ exports.openLitigation = async (req, res) => {
     }
 
     const { description } = req.body;
+    order.preLitigationStatus = order.status;
     order.status = 'litigation_opened';
     order.litigationOpenedAt = new Date();
     order.litigationDescription = String(description || '').trim() || null;
