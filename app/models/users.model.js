@@ -231,6 +231,12 @@ module.exports = (mongoose) => {
       weeklyCampaignUsage: { type: Number, },
       monthlyCampaignUsage: { type: Number, }, //depends acc to plan
       isImported: { type: Boolean }, //if true key to identify if the user is imported via csv
+      // Referral / invitation
+      shareCode: { type: String, unique: true, sparse: true, default: null },
+      invitedByUserId: { type: require('mongoose').Schema.Types.ObjectId, ref: 'users', default: null },
+      invitationSource: { type: String, default: null },
+      invitationAcceptedAt: { type: Date, default: null },
+      invitationActivatedAt: { type: Date, default: null },
     },
 
     { timestamps: true }

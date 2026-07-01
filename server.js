@@ -84,6 +84,7 @@ let routes = require("./app/routes");
 const { resetDailyMessageLimit } = require("./app/cron/message.cron");
 const { checkAndSendSubscriptionReminders } = require("./app/cron/subscription.cron");
 const { monthlyCampaignLimit } = require("./app/cron/campaign.cron.js");
+const { startWeeklyDigestCron } = require("./app/cron/weeklyDigest.cron");
 
 // require('./app/routes/users.routes')(app);
 // require('./app/routes/upload.routes')(app);
@@ -144,6 +145,9 @@ app.get("/", (req, res) => {
   res.json({ message: "Welcome to  Bookaroo" });
 });
 
+// Public referral link redirect — /r/:shareCode -> frontend signup?ref=...
+app.get("/r/:shareCode", require("./app/controllers/ReferralController").trackLinkOpen);
+
 app.use("/", routes);
 // let rolesData = [
 //   { name: "admin", loginPortal: "admin", permissions: [] },
@@ -185,6 +189,7 @@ seedDb();
 resetDailyMessageLimit();
 checkAndSendSubscriptionReminders();
 monthlyCampaignLimit();
+startWeeklyDigestCron();
 // set port, listen for requests
 const PORT = process.env.PORT || 6089;
 

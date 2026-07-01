@@ -2,18 +2,19 @@ const { sendEmail } = require("../config/brevo.config");
 const SmtpController = require("../controllers/SmtpController");
 const dotenv = require("dotenv");
 dotenv.config();
+const constants = require("../utls/constants");
 
 const { BACK_WEB_URL, FRONT_WEB_URL, ADMIN_WEB_URL } = process.env;
 
 const forgotPasswordEmail = (options) => {
-    let email = options.email;
-    let verificationCode = options.verificationCode;
-    let firstName = options.fullName;
-    let userId = options.id;
+  let email = options.email;
+  let verificationCode = options.verificationCode;
+  let firstName = options.fullName;
+  let userId = options.id;
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -152,28 +153,26 @@ const forgotPasswordEmail = (options) => {
 
 `;
 
-    // SmtpController.sendEmail(email, "Reset Password", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Reset Password",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Reset Password", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Reset Password",
+    htmlContent: message,
+  });
 };
 
-
 const changeEmail = (options) => {
-    console.log(options, "===============options")
-    let email = options.email;
-    let firstName = options.fullName;
-    let generateOtp = options.generateOtp;
-    let newEmail = options.newEmail;
-    let mode = options.mode;
-    let message = "";
-    if (mode === "mobile") {
-        // Email template for mobile mode
-        message += `<!DOCTYPE html>
+  console.log(options, "===============options");
+  let email = options.email;
+  let firstName = options.fullName;
+  let generateOtp = options.generateOtp;
+  let newEmail = options.newEmail;
+  let mode = options.mode;
+  let message = "";
+  if (mode === "mobile") {
+    // Email template for mobile mode
+    message += `<!DOCTYPE html>
         <html>
         <head>
             <title>Bookaroo</title>
@@ -241,9 +240,9 @@ const changeEmail = (options) => {
             </table>
         </body>
         </html>`;
-    } else {
-        // Default email template with "Click Here"
-        message += `<!DOCTYPE html>
+  } else {
+    // Default email template with "Click Here"
+    message += `<!DOCTYPE html>
         <html>
         <head>
             <title>Bookaroo</title>
@@ -313,29 +312,28 @@ const changeEmail = (options) => {
             </table>
         </body>
         </html>`;
-    }
+  }
 
-    // SmtpController.sendEmail(email, "Change Email Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Change Email Confirmation",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Change Email Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Change Email Confirmation",
+    htmlContent: message,
+  });
 };
 
 const changeEmailOtp = (options) => {
-    console.log(options, "===============options")
-    let email = options.email;
-    let firstName = options.fullName;
-    let generateOtp = options.generateOtp
-    let newEmail = options.email
-    let currentEmail = options.currentEmail
-    let mode = options.mode
-    let message = "";
-    if (mode === "mobile") {
-        message += `<!DOCTYPE html>
+  console.log(options, "===============options");
+  let email = options.email;
+  let firstName = options.fullName;
+  let generateOtp = options.generateOtp;
+  let newEmail = options.email;
+  let currentEmail = options.currentEmail;
+  let mode = options.mode;
+  let message = "";
+  if (mode === "mobile") {
+    message += `<!DOCTYPE html>
         <html>
   <head>
       <title>Bookaroo</title>
@@ -453,8 +451,8 @@ const changeEmailOtp = (options) => {
   </html>
   
   `;
-    } else {
-        message += `<!DOCTYPE html>
+  } else {
+    message += `<!DOCTYPE html>
     <html>
 <head>
   <title>Bookaroo</title>
@@ -574,21 +572,20 @@ const changeEmailOtp = (options) => {
 </html>
 
 `;
-    }
-    // SmtpController.sendEmail(email, "Change Password Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Change Password Confirmation",
-        htmlContent: message
-    });
-
+  }
+  // SmtpController.sendEmail(email, "Change Password Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Change Password Confirmation",
+    htmlContent: message,
+  });
 };
 const changePasswordConfirmation = (options) => {
-    let email = options.email;
-    let firstName = options.fullName;
-    let message = "";
-    message += `<!DOCTYPE html>
+  let email = options.email;
+  let firstName = options.fullName;
+  let message = "";
+  message += `<!DOCTYPE html>
 <html>
 <head>
     <title>Bookaroo</title>
@@ -713,25 +710,24 @@ const changePasswordConfirmation = (options) => {
 
 `;
 
-    // SmtpController.sendEmail(email, "Change Password Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Change Password Confirmation",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Change Password Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Change Password Confirmation",
+    htmlContent: message,
+  });
 };
 
 const contactUsEmail = (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    let userName = options.userName;
-    let useremail = options.useremail;
+  let email = options.email;
+  let fullName = options.fullName;
+  let userName = options.userName;
+  let useremail = options.useremail;
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -848,31 +844,30 @@ const contactUsEmail = (options) => {
 
 `;
 
-    // SmtpController.sendEmail(
-    //     email,
-    //     " New Contact Us Request Submitted by User",
-    //     message
-    // );
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "New Contact Us Request Submitted by User",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(
+  //     email,
+  //     " New Contact Us Request Submitted by User",
+  //     message
+  // );
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "New Contact Us Request Submitted by User",
+    htmlContent: message,
+  });
 };
 
 const addUserEmail = (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    let password = options.password;
-    let roleName = options.role;
+  let email = options.email;
+  let fullName = options.fullName;
+  let password = options.password;
+  let roleName = options.role;
 
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
-    message += `
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
+  message += `
  <!DOCTYPE html>
 <html>
 
@@ -962,19 +957,19 @@ const addUserEmail = (options) => {
   <td>
                         <div style="margin-bottom: 30px; border-radius: 5px">
                         <div style="text-align: center; padding-top: 30px;"> `;
-    if (roleName == "agency") {
-        message += ` <h2 style="    color: #976dd0!important;
+  if (roleName == "agency") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your agency account is ready!</h2>
                           `;
-    } else if (roleName == "staff") {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else if (roleName == "staff") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your staff account is ready!</h2> `;
-    } else {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Congratulations!</h2> `;
-    }
+  }
 
-    message += `</div>
+  message += `</div>
                           <p  
                             style="
                               font-size: 16px;
@@ -1040,27 +1035,26 @@ const addUserEmail = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, `Registeration`, message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Registration",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, `Registeration`, message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Registration",
+    htmlContent: message,
+  });
 };
 
 const addStaffEmail = (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    let password = options.password;
-    let roleName = options.role;
+  let email = options.email;
+  let fullName = options.fullName;
+  let password = options.password;
+  let roleName = options.role;
 
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
-    message += `
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
+  message += `
   <!DOCTYPE html>
 <html>
 
@@ -1150,19 +1144,19 @@ const addStaffEmail = (options) => {
   <td>
                         <div style="margin-bottom: 30px; border-radius: 5px">
                         <div style="text-align: center; padding-top: 30px;"> `;
-    if (roleName == "agency") {
-        message += ` <h2 style="    color: #976dd0!important;
+  if (roleName == "agency") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your agency account is ready!</h2>
                           `;
-    } else if (roleName == "staff") {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else if (roleName == "staff") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your staff account is ready!</h2> `;
-    } else {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Congratulations!</h2> `;
-    }
+  }
 
-    message += `</div>
+  message += `</div>
                           <p  
                             style="
                               font-size: 16px;
@@ -1228,19 +1222,19 @@ const addStaffEmail = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, `Registeration`, message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Registration",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, `Registeration`, message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Registration",
+    htmlContent: message,
+  });
 };
 
 const welcomeUser = (options) => {
-    let email = options.email;
+  let email = options.email;
 
-    let message = `
+  let message = `
 <!DOCTYPE html>
 <html>
 
@@ -1316,27 +1310,26 @@ const welcomeUser = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, "Welcome to Bookaroo", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Welcome to Bookaroo",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Welcome to Bookaroo", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Welcome to Bookaroo",
+    htmlContent: message,
+  });
 };
 
 const invite_user_email = (options) => {
-    let email = options.email;
-    let type = options.type;
-    let fullName = options.fullName;
-    let password = options.password;
+  let email = options.email;
+  let type = options.type;
+  let fullName = options.fullName;
+  let password = options.password;
 
-    if (!fullName) {
-        firstName = email;
-    }
-    let message = "";
-    message += `
+  if (!fullName) {
+    firstName = email;
+  }
+  let message = "";
+  message += `
   <!DOCTYPE html>
   <html>
   
@@ -1443,17 +1436,17 @@ const invite_user_email = (options) => {
 
                           <tr>
                               <td>`;
-    if (type == "new_talent") {
-        message += `    <a href="${STAGING_FRONTEND_URL}/sign-in?id=${options.id}""
+  if (type == "new_talent") {
+    message += `    <a href="${STAGING_FRONTEND_URL}/sign-in?id=${options.id}""
                                 style="background: #3F559E
                         ; display:block;color:#fff;padding:12px 10px; width: 220px; margin: 0 auto 0; box-shadow: none; border: 0; font-size: 15px; text-decoration: none; font-weight: 400; text-align: center;">Click here to log in</a>`;
-    } else {
-        message += `    <a href="${STAGING_FRONTEND_URL}/organization""
+  } else {
+    message += `    <a href="${STAGING_FRONTEND_URL}/organization""
                                 style="background: #3F559E
                         ; display:block;color:#fff;padding:12px 10px; width: 220px; margin: 0 auto 0; box-shadow: none; border: 0; font-size: 15px; text-decoration: none; font-weight: 400; text-align: center;">Click here to log in</a>`;
-    }
+  }
 
-    message += `</td>
+  message += `</td>
                               
                           </tr>
   
@@ -1477,162 +1470,156 @@ const invite_user_email = (options) => {
   
   </html>`;
 
-    // SmtpController.sendEmail(email, "Invitation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Invitation",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Invitation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Invitation",
+    htmlContent: message,
+  });
 };
 
 const userVerifyLink = async (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    let message = "";
+  let email = options.email;
+  let fullName = options.fullName;
+  let message = "";
 
-    //     message += `
-    //  <!DOCTYPE html>
-    // <html>
+  //     message += `
+  //  <!DOCTYPE html>
+  // <html>
 
-    // <head>
-    //     <title>Bookaroo</title>
-    //     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    //     <link rel="preconnect" href="https://fonts.googleapis.com">
-    //     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    //     <link rel="preconnect" href="https://fonts.googleapis.com">
-    //     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    //     <link
-    //         href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
-    //         rel="stylesheet">
+  // <head>
+  //     <title>Bookaroo</title>
+  //     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  //     <link rel="preconnect" href="https://fonts.googleapis.com">
+  //     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  //     <link rel="preconnect" href="https://fonts.googleapis.com">
+  //     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  //     <link
+  //         href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
+  //         rel="stylesheet">
 
-    //     <style>
-    //         @media (max-width:767px) {
-    //             .w-100 {
-    //                 width: 100%;
-    //             }
+  //     <style>
+  //         @media (max-width:767px) {
+  //             .w-100 {
+  //                 width: 100%;
+  //             }
 
-    //             .fz-20 {
-    //                 font-size: 25px !important;
-    //             }
-    //         }
-    //     </style>
+  //             .fz-20 {
+  //                 font-size: 25px !important;
+  //             }
+  //         }
+  //     </style>
 
-    // </head>
+  // </head>
 
-    // <body style="font-family: 'Poppins', sans-serif; background:#fff;">
-    //     <table width="100%" cellpadding:"0" cellspacing="0">
-    //         <tbody>
-    //             <tr>
-    //                 <td style="padding: 50px 20px;">
-    //                     <table width="676px" cellpadding:"0" cellspacing="0" style="margin: 0 auto; background:#F2F5FF
-    //                     ;"
-    //                         class="w-100">
+  // <body style="font-family: 'Poppins', sans-serif; background:#fff;">
+  //     <table width="100%" cellpadding:"0" cellspacing="0">
+  //         <tbody>
+  //             <tr>
+  //                 <td style="padding: 50px 20px;">
+  //                     <table width="676px" cellpadding:"0" cellspacing="0" style="margin: 0 auto; background:#F2F5FF
+  //                     ;"
+  //                         class="w-100">
 
-    //                        <tr>
-    //                             <td style="height:40px;">
+  //                        <tr>
+  //                             <td style="height:40px;">
 
-    //                             </td>
-    //                         </tr>
+  //                             </td>
+  //                         </tr>
 
-    //                         <tr>
-    //                             <td style="text-align:center; padding-bottom: 10px; height: 50px;">
-    //                                 <img src="${BACK_WEB_URL}/img/image-1728022466713-723.png"
-    //                                 style="width: 120px; margin: 0 auto;" />
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                             <td style="padding: 20px 60px;">
-    //                                 <table width="100%;cellpadding:"0" cellspacing="0" ">
-    //                                     <tr>
-    //                                         <td style="border-bottom: 1px solid 
-    //                             #E2E8F0; ">
+  //                         <tr>
+  //                             <td style="text-align:center; padding-bottom: 10px; height: 50px;">
+  //                                 <img src="${BACK_WEB_URL}/img/image-1728022466713-723.png"
+  //                                 style="width: 120px; margin: 0 auto;" />
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                             <td style="padding: 20px 60px;">
+  //                                 <table width="100%;cellpadding:"0" cellspacing="0" ">
+  //                                     <tr>
+  //                                         <td style="border-bottom: 1px solid
+  //                             #E2E8F0; ">
 
-    //                             </td>
-    //                                     </tr>
-    //                                 </table>
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                             <td style="text-align:center; padding-bottom: 10px; ">
-    //                                 <img src="${BACK_WEB_URL}/img/image-1728022760309-8794.png"
-    //                                 style="width: 340px; margin: 0 auto;" />
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                             <td style="padding: 20px 60px;">
-    //                                 <table width="100%;cellpadding:"0" cellspacing="0" ">
-    //                                     <tr>
-    //                                         <td style="border-bottom: 1px solid
-    //                             #E2E8F0; ">
+  //                             </td>
+  //                                     </tr>
+  //                                 </table>
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                             <td style="text-align:center; padding-bottom: 10px; ">
+  //                                 <img src="${BACK_WEB_URL}/img/image-1728022760309-8794.png"
+  //                                 style="width: 340px; margin: 0 auto;" />
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                             <td style="padding: 20px 60px;">
+  //                                 <table width="100%;cellpadding:"0" cellspacing="0" ">
+  //                                     <tr>
+  //                                         <td style="border-bottom: 1px solid
+  //                             #E2E8F0; ">
 
-    //                             </td>
-    //                                     </tr>
-    //                                 </table>
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                             <td style="text-align:center;">
-    //                                 <p style="font-size:22px; max-width: 400px; margin:0 auto; font-weight: 600; padding: 0 20px; color: #976dd0; line-height: 24px;"
-    //                                     class="fz-20">Hi ${fullName},
-    //                                 </p>
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                             <td style="padding: 15px 0 25px 0;">
-    //                                 <p
-    //                                     style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
-    //                                     Thank's for registering on our platform.Please verify the email using this otp.
-    //                                 </p>
-    //                             </td>
-    //                         </tr>
-    //                         <tr>
-    //                                                  <td style="display: flex; justify-content: center; gap: 10px;">
+  //                             </td>
+  //                                     </tr>
+  //                                 </table>
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                             <td style="text-align:center;">
+  //                                 <p style="font-size:22px; max-width: 400px; margin:0 auto; font-weight: 600; padding: 0 20px; color: #976dd0; line-height: 24px;"
+  //                                     class="fz-20">Hi ${fullName},
+  //                                 </p>
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                             <td style="padding: 15px 0 25px 0;">
+  //                                 <p
+  //                                     style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
+  //                                     Thank's for registering on our platform.Please verify the email using this otp.
+  //                                 </p>
+  //                             </td>
+  //                         </tr>
+  //                         <tr>
+  //                                                  <td style="display: flex; justify-content: center; gap: 10px;">
 
-    //         <a
-    //           style="
-    //                             font-size: 14px;
-    //                             padding: 14px 30px;
-    //                        text-align:center;
-    //                        margin:0 auto;
-    //                             background: #976DD0!important;
-    //                             cursor: pointer;
-    //                             border: none;
-    //                             color: #fff;
-    //                             display:inline-block;
-    //                             border-radius:5px;
-    //                           "
-    //         >
-    //          ${options.otp}
-    //         </a>
-    //       </td>
-    //                         </tr>
+  //         <a
+  //           style="
+  //                             font-size: 14px;
+  //                             padding: 14px 30px;
+  //                        text-align:center;
+  //                        margin:0 auto;
+  //                             background: #976DD0!important;
+  //                             cursor: pointer;
+  //                             border: none;
+  //                             color: #fff;
+  //                             display:inline-block;
+  //                             border-radius:5px;
+  //                           "
+  //         >
+  //          ${options.otp}
+  //         </a>
+  //       </td>
+  //                         </tr>
 
+  //                         <tr>
+  //                             <td style="height:60px;">
 
+  //                             </td>
+  //                         </tr>
 
-    //                         <tr>
-    //                             <td style="height:60px;">
+  //                     </table>
+  //                 </td>
+  //             </tr>
+  //         </tbody>
+  //     </table>
+  // </body>
 
-    //                             </td>
-    //                         </tr>
+  // </html>
+  // `;
 
+  let message1;
 
-
-
-    //                     </table>
-    //                 </td>
-    //             </tr>
-    //         </tbody>
-    //     </table>
-    // </body>
-
-    // </html>
-    // `;
-
-    let message1;
-
-    message1 += `
+  message1 += `
 <!DOCTYPE html>
 <html>
 <head>
@@ -1714,20 +1701,19 @@ const userVerifyLink = async (options) => {
 
 `;
 
-    // SmtpController.sendEmail(email, "Email Verification", message1);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Email Verification",
-        htmlContent: message1
-    });
-
+  // SmtpController.sendEmail(email, "Email Verification", message1);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Email Verification",
+    htmlContent: message1,
+  });
 };
 const DocumentVerifyLink = async (options) => {
-    adminEmail = options.adminEmail;
-    let message = "";
+  adminEmail = options.adminEmail;
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
   <html
     lang="en"
@@ -1863,25 +1849,25 @@ const DocumentVerifyLink = async (options) => {
   </html>
   `;
 
-    // SmtpController.sendEmail(adminEmail, " Document Verification", message);
-    sendEmail({
-        module: "auth",
-        to: adminEmail,
-        subject: "Document Verification",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(adminEmail, " Document Verification", message);
+  sendEmail({
+    module: "auth",
+    to: adminEmail,
+    subject: "Document Verification",
+    htmlContent: message,
+  });
 };
 const updatePasswordEmail = (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    userId = options.userId;
+  let email = options.email;
+  let fullName = options.fullName;
+  userId = options.userId;
 
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
   <html>
   
@@ -2003,28 +1989,27 @@ const updatePasswordEmail = (options) => {
   
   </html>`;
 
-    // SmtpController.sendEmail(email, "Password Update", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Password Update",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Password Update", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Password Update",
+    htmlContent: message,
+  });
 };
 
 const verificationOtp = (options) => {
-    let email = options.email;
-    let fullName = options.firstName ? options.firstName : options.fullName;
-    userId = options.userId;
-    let deviceToken = options.deviceToken;
-    let deviceId = options.deviceId;
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
+  let email = options.email;
+  let fullName = options.firstName ? options.firstName : options.fullName;
+  userId = options.userId;
+  let deviceToken = options.deviceToken;
+  let deviceId = options.deviceId;
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
 <html>
 
@@ -2161,27 +2146,26 @@ const verificationOtp = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, "Verify otp", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Verify otp",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Verify otp", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Verify otp",
+    htmlContent: message,
+  });
 };
 
 const forgotPasswordEmailForUser = (options) => {
-    let email = options.email;
-    let fullName = options.firstName ? options.firstName : options.fullName;
-    userId = options.userId;
+  let email = options.email;
+  let fullName = options.firstName ? options.firstName : options.fullName;
+  userId = options.userId;
 
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
 <html>
 
@@ -2319,24 +2303,24 @@ const forgotPasswordEmailForUser = (options) => {
 </html>
 `;
 
-    // SmtpController.sendEmail(email, "Reset Password otp", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Reset Password otp",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "Reset Password otp", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Reset Password otp",
+    htmlContent: message,
+  });
 };
 
 const ClaimVenueRequest = async (options) => {
-    email = options.email;
-    venueId = options.venueId;
-    venueEmail = options.venueEmail;
-    venueName = options.venueName;
-    venueAddress = options.venueAddress;
-    let message = "";
+  email = options.email;
+  venueId = options.venueId;
+  venueEmail = options.venueEmail;
+  venueName = options.venueName;
+  venueAddress = options.venueAddress;
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
   <html
     lang="en"
@@ -2472,22 +2456,21 @@ const ClaimVenueRequest = async (options) => {
   </html>
   `;
 
-    // SmtpController.sendEmail(email, "Request To Claim Venue", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Request To Claim Venue",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Request To Claim Venue", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Request To Claim Venue",
+    htmlContent: message,
+  });
 };
 const sendCredential = async (options) => {
-    email = options.email;
-    password = options.password;
-    type = options.type;
-    let message = "";
+  email = options.email;
+  password = options.password;
+  type = options.type;
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
   <html
     lang="en"
@@ -2575,8 +2558,8 @@ const sendCredential = async (options) => {
                           font-size: 26px; margin: 0;">Confirmation Mail</h2>
                         
                           </div>`;
-    if (type == "verify") {
-        message += `
+  if (type == "verify") {
+    message += `
                            <p  
                             style="
                               font-size: 18px;
@@ -2590,8 +2573,8 @@ const sendCredential = async (options) => {
                          <span style="display: block;">Please login to your account by clicking the below button </span>
                        
                           </p>`;
-    } else {
-        message += `<p  
+  } else {
+    message += `<p  
     style="
       font-size: 18px;
       line-height: 30px;
@@ -2600,14 +2583,14 @@ const sendCredential = async (options) => {
   >
 Your venue claim request is rejected  <br></br>
   </p>`;
-    }
-    `</div>
+  }
+  `</div>
                       </td>
   
   </tr>`;
 
-    if (type == "verify") {
-        message += `
+  if (type == "verify") {
+    message += `
                 <tr>
                       
  
@@ -2628,11 +2611,11 @@ Your venue claim request is rejected  <br></br>
         </a>
       </td>
   </tr>`;
-    } else {
-        message += ``;
-    }
+  } else {
+    message += ``;
+  }
 
-    `</table>
+  `</table>
                 </td>
               </tr>
             </table>
@@ -2643,23 +2626,21 @@ Your venue claim request is rejected  <br></br>
   </html>
   `;
 
-    // SmtpController.sendEmail(email, "Confirmation Mail", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Confirmation Mail",
-        htmlContent: message
-    });
-
-
+  // SmtpController.sendEmail(email, "Confirmation Mail", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Confirmation Mail",
+    htmlContent: message,
+  });
 };
 const sendVerificationMail = async (options) => {
-    email = options.email;
-    password = options.password;
-    type = options.type;
-    let message = "";
+  email = options.email;
+  password = options.password;
+  type = options.type;
+  let message = "";
 
-    message += `
+  message += `
   <!DOCTYPE html>
   <html
     lang="en"
@@ -2747,8 +2728,8 @@ const sendVerificationMail = async (options) => {
                           font-size: 26px; margin: 0;">Confirmation Mail</h2>
                         
                           </div>`;
-    if (type == "verify") {
-        message += `
+  if (type == "verify") {
+    message += `
                            <p  
                             style="
                               font-size: 18px;
@@ -2761,8 +2742,8 @@ const sendVerificationMail = async (options) => {
                        
                        
                           </p>`;
-    } else {
-        message += `<p  
+  } else {
+    message += `<p  
     style="
       font-size: 18px;
       line-height: 30px;
@@ -2771,14 +2752,14 @@ const sendVerificationMail = async (options) => {
   >
 Your venue documents are rejected by admin .<br></br>
   </p>`;
-    }
-    `</div>
+  }
+  `</div>
                       </td>
   
   </tr>`;
 
-    if (type == "verify") {
-        message += `<tr>
+  if (type == "verify") {
+    message += `<tr>
                       
  
      <td style="display: flex; justify-content: center; gap: 10px;">
@@ -2799,11 +2780,11 @@ Your venue documents are rejected by admin .<br></br>
       </td>
   </tr>
       `;
-    } else {
-        message += ``;
-    }
+  } else {
+    message += ``;
+  }
 
-    `</table >
+  `</table >
                 </td >
               </tr >
             </table >
@@ -2814,27 +2795,26 @@ Your venue documents are rejected by admin .<br></br>
   </html >
   `;
 
-    // SmtpController.sendEmail(email, "Confirmation Mail", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Confirmation Mail",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Confirmation Mail", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Confirmation Mail",
+    htmlContent: message,
+  });
 };
 
 const loginCredentialEmail = (options) => {
-    let email = options.email;
-    let fullName = options.fullName;
-    let password = options.password;
-    let roleName = options.role;
+  let email = options.email;
+  let fullName = options.fullName;
+  let password = options.password;
+  let roleName = options.role;
 
-    if (!fullName) {
-        fullName = email;
-    }
-    let message = "";
-    message += `
+  if (!fullName) {
+    fullName = email;
+  }
+  let message = "";
+  message += `
  <!DOCTYPE html>
 <html>
 
@@ -2924,19 +2904,19 @@ const loginCredentialEmail = (options) => {
   <td>
                         <div style="margin-bottom: 30px; border-radius: 5px">
                         <div style="text-align: center; padding-top: 30px;"> `;
-    if (roleName == "agency") {
-        message += ` <h2 style="    color: #976dd0!important;
+  if (roleName == "agency") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your agency account is ready!</h2>
                           `;
-    } else if (roleName == "staff") {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else if (roleName == "staff") {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Your staff account is ready!</h2> `;
-    } else {
-        message += ` <h2 style="    color: #976dd0!important;
+  } else {
+    message += ` <h2 style="    color: #976dd0!important;
                           font-size: 26px; margin: 0;"> Congratulations!</h2> `;
-    }
+  }
 
-    message += `</div>
+  message += `</div>
                           <p  
                             style="
                               font-size: 16px;
@@ -3002,33 +2982,33 @@ const loginCredentialEmail = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, `Registeration`, message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Registeration",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, `Registeration`, message);
+  sendEmail({
+    module: "AUTH",
+    to: email,
+    subject: "Registeration",
+    htmlContent: message,
+    // templateId:
+  });
 };
 const SendPersonalDataIndividual = (options) => {
-    let firstName = options.firstName;
-    let lastName = options.lastName;
-    let email = options.email;
-    let images = options.images;
-    let city = options.city;
-    let street = options.street;
-    let state = options.state;
-    let country = options.country;
-    let pinCode = options.pinCode;
-    let mobileNo = options.mobileNo;
-    let username = options.username;
-    let message = "";
+  let firstName = options.firstName;
+  let lastName = options.lastName;
+  let email = options.email;
+  let images = options.images;
+  let city = options.city;
+  let street = options.street;
+  let state = options.state;
+  let country = options.country;
+  let pinCode = options.pinCode;
+  let mobileNo = options.mobileNo;
+  let username = options.username;
+  let message = "";
 
-    const addressParts = [street, city, state, country, pinCode].filter(Boolean);
-    const fullAddress = addressParts.join(", ");
+  const addressParts = [street, city, state, country, pinCode].filter(Boolean);
+  const fullAddress = addressParts.join(", ");
 
-    message = `
+  message = `
    <!DOCTYPE html>
    <html>
    <head>
@@ -3112,37 +3092,37 @@ const SendPersonalDataIndividual = (options) => {
    </html>
    `;
 
-    // SmtpController.sendEmail(email, "Personal Information Mail", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Personal Information Mail",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "Personal Information Mail", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Personal Information Mail",
+    htmlContent: message,
+  });
 };
 
 const SendPersonalDataPro = (options) => {
-    let firstName = options.firstName;
-    let lastName = options.lastName;
-    let email = options.email;
-    let images = options.images;
-    let city = options.city;
-    let street = options.street;
-    let state = options.state;
-    let country = options.country;
-    let pinCode = options.pinCode;
-    let mobileNo = options.mobileNo;
-    let username = options.username;
-    let companyRole = options.companyRole
-    let companyName = options.companyName;
-    let companyEmail = options.companyEmail;
-    let companyContactNumber = options.companyContactNumber;
-    let website = options.website;
-    let coverImage = options.coverImage;
-    let companyLogo = options.companyLogo;
+  let firstName = options.firstName;
+  let lastName = options.lastName;
+  let email = options.email;
+  let images = options.images;
+  let city = options.city;
+  let street = options.street;
+  let state = options.state;
+  let country = options.country;
+  let pinCode = options.pinCode;
+  let mobileNo = options.mobileNo;
+  let username = options.username;
+  let companyRole = options.companyRole;
+  let companyName = options.companyName;
+  let companyEmail = options.companyEmail;
+  let companyContactNumber = options.companyContactNumber;
+  let website = options.website;
+  let coverImage = options.coverImage;
+  let companyLogo = options.companyLogo;
 
-    let message = "";
-    message = `
+  let message = "";
+  message = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -3185,27 +3165,31 @@ const SendPersonalDataPro = (options) => {
                         <tr>
                             <td style="padding: 0 40px;">
                                 <table width="100%" style="font-size: 14px; color: #333;">
-                                    <tr><td><strong>Username:</strong> ${username || '-'}</td></tr>
-                                    <tr><td><strong>Email:</strong> ${email || '-'}</td></tr>
-                                    <tr><td><strong>Mobile Number:</strong> ${mobileNo || '-'}</td></tr>
-                                    <tr><td><strong>Address:</strong> ${street || ''}, ${city || ''}, ${state || ''}, ${country || ''} - ${pinCode || ''}</td></tr>
-                                    <tr><td><strong>Company Name:</strong> ${companyName || '-'}</td></tr>
-                                    <tr><td><strong>Company Role:</strong> ${companyRole || '-'}</td></tr>
-                                    <tr><td><strong>Company Email:</strong> ${companyEmail || '-'}</td></tr>
-                                    <tr><td><strong>Company Contact Number:</strong> ${companyContactNumber || '-'}</td></tr>
-                                    <tr><td><strong>Website:</strong> <a href="${website}" style="color: #976DD0;">${website || '-'}</a></td></tr>
+                                    <tr><td><strong>Username:</strong> ${username || "-"}</td></tr>
+                                    <tr><td><strong>Email:</strong> ${email || "-"}</td></tr>
+                                    <tr><td><strong>Mobile Number:</strong> ${mobileNo || "-"}</td></tr>
+                                    <tr><td><strong>Address:</strong> ${street || ""}, ${city || ""}, ${state || ""}, ${country || ""} - ${pinCode || ""}</td></tr>
+                                    <tr><td><strong>Company Name:</strong> ${companyName || "-"}</td></tr>
+                                    <tr><td><strong>Company Role:</strong> ${companyRole || "-"}</td></tr>
+                                    <tr><td><strong>Company Email:</strong> ${companyEmail || "-"}</td></tr>
+                                    <tr><td><strong>Company Contact Number:</strong> ${companyContactNumber || "-"}</td></tr>
+                                    <tr><td><strong>Website:</strong> <a href="${website}" style="color: #976DD0;">${website || "-"}</a></td></tr>
                                 </table>
                             </td>
                         </tr>
     
-                        ${(companyLogo || coverImage) ? `
+                        ${
+                          companyLogo || coverImage
+                            ? `
                         <tr>
                             <td style="padding: 20px 40px; text-align: center;">
-                                ${companyLogo ? `<img src="${companyLogo}" alt="Company Logo" style="max-width: 150px; margin-bottom: 10px;" />` : ''}
-                                ${coverImage ? `<img src="${coverImage}" alt="Cover Image" style="max-width: 100%; margin-top: 10px;" />` : ''}
+                                ${companyLogo ? `<img src="${companyLogo}" alt="Company Logo" style="max-width: 150px; margin-bottom: 10px;" />` : ""}
+                                ${coverImage ? `<img src="${coverImage}" alt="Cover Image" style="max-width: 100%; margin-top: 10px;" />` : ""}
                             </td>
                         </tr>
-                        ` : ''}
+                        `
+                            : ""
+                        }
     
                         <tr>
                             <td style="padding: 20px 40px; text-align: center;">
@@ -3226,26 +3210,24 @@ const SendPersonalDataPro = (options) => {
     </html>
     `;
 
-    // SmtpController.sendEmail(email, "Personal Information Mail", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Personal Information Mail",
-        htmlContent: message
-    });
-
-
+  // SmtpController.sendEmail(email, "Personal Information Mail", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Personal Information Mail",
+    htmlContent: message,
+  });
 };
 
 const existingUserShare = (options) => {
-    let email = options.email;
-    let senderName = options.name;
-    let userId = options.userId;
-    let propertyLink = options.propertyLink;
-    let propertyId = options.propertyId;
-    let message = "";
+  let email = options.email;
+  let senderName = options.name;
+  let userId = options.userId;
+  let propertyLink = options.propertyLink;
+  let propertyId = options.propertyId;
+  let message = "";
 
-    message += `
+  message += `
     <!DOCTYPE html>
     <html>
     
@@ -3342,25 +3324,25 @@ const existingUserShare = (options) => {
     </body>
     </html>`;
 
-    // SmtpController.sendEmail(email, "A property has been shared with you", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "A property has been shared with you",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "A property has been shared with you", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "A property has been shared with you",
+    htmlContent: message,
+  });
 };
 
 const nonExistingUserShare = async (options) => {
-    let email = options.email;
-    let senderName = options.name;
-    let userId = options.userId;
-    let propertyLink = options.propertyLink;
-    let propertyId = options.propertyId;
-    let signUpLink = options.signUpLink;
-    let message = "";
+  let email = options.email;
+  let senderName = options.name;
+  let userId = options.userId;
+  let propertyLink = options.propertyLink;
+  let propertyId = options.propertyId;
+  let signUpLink = options.signUpLink;
+  let message = "";
 
-    message += `
+  message += `
 <!DOCTYPE html>
 <html>
 <head>
@@ -3488,147 +3470,595 @@ const nonExistingUserShare = async (options) => {
 </html>
 `;
 
-
-    // SmtpController.sendEmail(email, "A property has been shared with you", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "A property has been shared with you",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "A property has been shared with you", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "A property has been shared with you",
+    htmlContent: message,
+  });
 };
 
-const interestUpdateEmail = (options) => {
-    const { buyerName, price, ownerName, type, propertyTitle, email, propertyLink } = options;
-    let primayMessage = "";
-    let mainMessage = "";
-    let secondaryMessage = "You can still visit the property to explore more details and check its updates. Stay connected for further updates.";
-    let emailSubject = "";
+const interestUpdateEmail = async (options) => {
+  const {
+    buyerName,
+    price,
+    ownerName,
+    type,
+    propertyTitle,
+    email,
+    propertyLink,
+    buyerPrice,
+    ownerPrice,
+  } = options;
 
-    // Determine content based on email type
-    switch (type) {
-        case "funnelOfferAccepted":
-            primayMessage = "Offer Accepted";
-            mainMessage = `Great news! <strong>${ownerName}</strong> has accepted the offer from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong> at the price of <strong>$${price}</strong>.`;
-            emailSubject = "Offer Accepted - Bookaroo";
-            break;
+  let primaryMessage = "";
+  let mainMessage = "";
+  let secondaryMessage =
+    "Vous pouvez toujours consulter la propriété pour voir plus de détails et suivre les dernières mises à jour.";
 
-        case "funnelOfferRefused":
-            primayMessage = "Offer Refused";
-            mainMessage = `We regret to inform you that <strong>${ownerName}</strong> has refused the offer from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong> at the proposed price of <strong>$${price}</strong>.`;
-            emailSubject = "Offer Declined - Bookaroo";
-            break;
+  let emailSubject = "";
+  let previewText = "";
 
-        case "funnelApplicationAccepted":
-            primayMessage = "Application Accepted";
-            mainMessage = `Congratulations! <strong>${ownerName}</strong> has accepted the application from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong>.`;
-            emailSubject = "Application Approved - Bookaroo";
-            break;
+  switch (type) {
+    case "funnelOfferAccepted":
+      primaryMessage = "Offre acceptée";
 
-        case "funnelApplicationRefused":
-            primayMessage = "Application Refused";
-            mainMessage = `We regret to inform you that <strong>${ownerName}</strong> has refused the application from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong>.`;
-            emailSubject = "Application Declined - Bookaroo";
-            break;
+      mainMessage = `Excellente nouvelle ! ${ownerName} a accepté l'offre de ${buyerName} pour le bien "${propertyTitle}" au prix de ${price}$.`;
 
-        default:
-            mainMessage = `There has been activity regarding <strong>${propertyTitle}</strong> between <strong>${buyerName}</strong> and <strong>${ownerName}</strong>.`;
-            emailSubject = "Activity Update - Bookaroo";
-    }
+      emailSubject = "Offre acceptée - Bookaroo";
 
-    const message = `<!DOCTYPE html>
-    <html>
-    <head>
-        <title>Bookaroo</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
-        <style>
-            @media (max-width:767px) {
-                .w-100 { width: 100%; }
-                .fz-20 { font-size: 25px !important; }
-            }
-        </style>
-    </head>
-    <body style="font-family: 'Poppins', sans-serif; background:#fff;">
-        <table width="100%" cellpadding="0" cellspacing="0">
-            <tbody>
-                <tr>
-                    <td style="padding: 50px 20px;">
-                        <table width="676px" cellpadding="0" cellspacing="0" style="margin: 0 auto; background:#F2F5FF;" class="w-100">
-                            <tr><td style="height:40px;"></td></tr>
-                            <tr>
-                                <td style="text-align:center; padding-bottom: 10px; height: 50px;">
-                                    <img src="${BACK_WEB_URL}/img/image-1728022466713-723.png" style="width: 120px; margin: 0 auto;" />
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 20px 60px;">
-                                    <table width="100%" cellpadding="0" cellspacing="0">
-                                        <tr><td style="border-bottom: 1px solid #E2E8F0;"></td></tr>
-                                    </table>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="text-align:center; padding-bottom: 10px;">
-                                    <img src="${BACK_WEB_URL}/img/image-1728022760309-8794.png" style="width: 340px; margin: 0 auto;" />
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 20px 60px;">
-                                    <table width="100%" cellpadding="0" cellspacing="0">
-                                        <tr><td style="border-bottom: 1px solid #E2E8F0;"></td></tr>
-                                    </table>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 15px 0 25px 0;">
-                                <h2 style="text-align: center; color: #6D6D6D">${primayMessage}</h2>
-                                    <p style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
-                                        ${mainMessage}
-                                    </p>
-                                    <p style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
-                                        ${secondaryMessage}
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="display: flex; justify-content: center; gap: 10px;">
-                                    <a href="${propertyLink}" style="font-size: 14px; padding: 14px 30px; text-align:center; margin:0 auto; background: #976DD0!important; cursor: pointer; border: none; color: #fff; display:inline-block; border-radius:5px;">
-                                        Visit Property
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr><td style="height:60px;"></td></tr>
-                        </table>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </body>
-    </html>`;
+      previewText = `Votre offre pour ${propertyTitle} a été acceptée.`;
 
-    // SmtpController.sendEmail(email, emailSubject, message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: emailSubject,
-        htmlContent: message
-    });
+      break;
 
-}
+    case "funnelOfferRefused":
+      primaryMessage = "Offre refusée";
+
+      mainMessage = `Nous sommes désolés de vous informer que ${ownerName} a refusé l'offre de ${buyerName} pour le bien "${propertyTitle}" au prix proposé de ${price}$.`;
+
+      emailSubject = "Offre refusée - Bookaroo";
+
+      previewText = `Votre offre pour ${propertyTitle} a été refusée.`;
+
+      break;
+
+    case "funnelApplicationAccepted":
+      primaryMessage = "Candidature acceptée";
+
+      mainMessage = `Félicitations ! ${ownerName} a accepté la candidature de ${buyerName} pour le bien "${propertyTitle}".`;
+
+      emailSubject = "Candidature acceptée - Bookaroo";
+
+      previewText = `Votre candidature pour ${propertyTitle} a été acceptée.`;
+
+      break;
+
+    case "funnelApplicationRefused":
+      primaryMessage = "Candidature refusée";
+
+      mainMessage = `Nous sommes désolés de vous informer que ${ownerName} a refusé la candidature de ${buyerName} pour le bien "${propertyTitle}".`;
+
+      emailSubject = "Candidature refusée - Bookaroo";
+
+      previewText = `Votre candidature pour ${propertyTitle} a été refusée.`;
+
+      break;
+
+    case "funnelReviewSubmitted":
+      primaryMessage = "Nouvel avis soumis";
+
+      mainMessage = `${buyerName} a soumis un avis pour le bien "${propertyTitle}". Vous pouvez consulter les détails et les commentaires depuis votre tableau de bord.`;
+
+      emailSubject = "Nouvel avis reçu - Bookaroo";
+
+      previewText = `Un nouvel avis a été soumis pour ${propertyTitle}.`;
+
+      break;
+
+    case "visitInvitation":
+      primaryMessage = "Invitation à visiter la propriété";
+
+      mainMessage = `${buyerName} souhaite visiter votre propriété "${propertyTitle}". Veuillez consulter votre tableau de bord pour confirmer ou gérer cette demande de visite.`;
+
+      emailSubject = "Invitation à visiter la propriété - Bookaroo";
+
+      previewText = `Nouvelle demande de visite pour ${propertyTitle}.`;
+
+      break;
+
+    case "buyerRequestedDocument":
+      primaryMessage = "Demande de documents";
+
+      mainMessage = `${buyerName} a demandé les documents vendeur pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour gérer cette demande.`;
+
+      emailSubject = "Demande de documents - Bookaroo";
+
+      previewText = `Nouvelle demande de documents pour ${propertyTitle}.`;
+
+      break;
+
+    // case "ownerOfferSubmitted":
+
+    // primaryMessage = "Offre soumise";
+
+    // mainMessage = `${ownerName} a soumis une offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et gérer cette offre.`;
+
+    // emailSubject = "Offre soumise - Bookaroo";
+
+    // previewText = `Une nouvelle offre a été soumise pour ${propertyTitle}.`;
+
+    // break;
+
+    case "ownerOfferSubmitted":
+
+        primaryMessage = "Offre soumise";
+
+        mainMessage = `${ownerName} a soumis une offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et gérer cette offre.`;
+
+        const ownerFundingTypeText = Array.isArray(buyerPrice?.fundingType)
+            ? buyerPrice.fundingType.join(", ")
+            : (buyerPrice?.fundingType || "-");
+
+        const ownerConditionsText = Array.isArray(buyerPrice?.conditions)
+            ? buyerPrice.conditions.join(", ")
+            : (buyerPrice?.conditions || "-");
+
+        secondaryMessage = `
+            Détails de l'offre :
+            - Montant : ${ownerPrice || buyerPrice?.amount || "-"}
+            - Date de validité : ${buyerPrice?.validity_date || "-"}
+            - Date d'emménagement : ${buyerPrice?.move_in || "-"}
+            - Type de financement : ${ownerFundingTypeText}
+            - Conditions suspensives : ${ownerConditionsText}
+            `;
+
+        emailSubject = "Offre soumise - Bookaroo";
+
+        previewText = `Une nouvelle offre a été soumise pour ${propertyTitle}.`;
+
+        break;
+
+    case "preslotBookedByOwner":
+
+    primaryMessage = "Créneau de pré-état des lieux réservé";
+
+    mainMessage = `${ownerName} a réservé un créneau de pré-état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et suivre les dernières mises à jour.`;
+
+    emailSubject = "Créneau de pré-état des lieux réservé - Bookaroo";
+
+    previewText = `Un créneau de pré-état des lieux a été réservé pour ${propertyTitle}.`;
+
+    break;
+
+    case "signingDateBookedByOwner":
+
+    primaryMessage = "Date de signature réservée";
+
+    mainMessage = `${ownerName} a réservé une date de signature pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et suivre les dernières mises à jour.`;
+
+    emailSubject = "Date de signature réservée - Bookaroo";
+
+    previewText = `Une date de signature a été réservée pour ${propertyTitle}.`;
+
+    break;
+    
+    case "ownerChangedSlot":
+    primaryMessage = "Créneau modifié par le propriétaire";
+    mainMessage = `${ownerName} a modifié le créneau de visite pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir le nouveau créneau.`;
+    emailSubject = "Créneau de visite modifié - Bookaroo";
+    previewText = `Le créneau de visite pour ${propertyTitle} a été modifié.`;
+    break;
+   
+    case "visitHosted":
+    primaryMessage = "Comment s'est passée votre visite ?";
+
+    mainMessage = `Nous espérons que votre visite du bien "${propertyTitle}" s'est bien déroulée. Votre avis est précieux et aidera le propriétaire à améliorer sa présentation et sa stratégie.`;
+
+    secondaryMessage = `Vous pouvez maintenant laisser un avis sur la visite, demander des documents complémentaires pour approfondir votre analyse, soumettre une offre ou informer le propriétaire si vous ne souhaitez pas poursuivre.`;
+
+    emailSubject = "Votre visite est terminée - Quelle est la prochaine étape ?";
+
+    previewText = `Donnez votre avis sur la visite et découvrez les prochaines étapes.`;
+
+    break;
+
+    case "documentSentByOwner":
+    primaryMessage = "Documents envoyés par le propriétaire";
+    mainMessage = `${ownerName} a envoyé les documents pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour les télécharger et les examiner.`;
+    emailSubject = "Documents reçus - Bookaroo";
+    previewText = `Les documents pour ${propertyTitle} ont été envoyés.`;
+    break;
+
+    case "offerRefusedByUser":
+    primaryMessage = "Offre refusée par l'acheteur";
+    mainMessage = `${buyerName} a refusé votre offre pour le bien "${propertyTitle}". Vous pouvez consulter votre tableau de bord pour plus de détails.`;
+    emailSubject = "Offre refusée par l'acheteur - Bookaroo";
+    previewText = `Votre offre pour ${propertyTitle} a été refusée.`;
+    break;
+    
+    case "offerSent":
+    primaryMessage = "Nouvelle offre reçue";
+    mainMessage = `${buyerName} a envoyé une offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et répondre à cette offre.`;
+    emailSubject = "Nouvelle offre reçue - Bookaroo";
+    previewText = `Nouvelle offre reçue pour ${propertyTitle}.`;
+    break;
+    
+    case "saleslotBookedByOwner":
+        primaryMessage = "Nouvelle demande de créneau de vente";
+        mainMessage = `${ownerName} a demandé un créneau de vente pour le bien "${propertyTitle}". Veuillez examiner la demande et confirmer votre disponibilité depuis votre tableau de bord.`;
+        emailSubject = "Nouvelle demande de créneau de vente - Bookaroo";
+        previewText = `Une nouvelle demande de créneau de vente a été soumise pour ${propertyTitle}.`;
+        break;
+// primaryMessage = "Créneau de vente réservé";
+//     mainMessage = `${ownerName} a réservé un créneau de vente pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et confirmer votre disponibilité.`;
+//     emailSubject = "Créneau de vente réservé - Bookaroo";
+//     previewText = `Un créneau de vente a été réservé pour ${propertyTitle}.`;
+//     break;
+    case "requestToChangePresaleSlot":
+        primaryMessage = "Demande de modification du créneau de pré-vente";
+        mainMessage = `${buyerName} a demandé une modification du créneau de pré-vente pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et gérer cette demande.`;
+        emailSubject = "Demande de modification du créneau - Bookaroo";
+        previewText = `Demande de modification du créneau de pré-vente pour ${propertyTitle}.`;
+        break;
+
+    case "ownerChangedPresigningSlot":
+        primaryMessage = "Créneau de pré-signature modifié";
+        mainMessage = `${ownerName} a modifié le créneau de pré-signature pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir le nouveau créneau et confirmer votre disponibilité.`;
+        emailSubject = "Créneau de pré-signature modifié - Bookaroo";
+        previewText = `Le créneau de pré-signature pour ${propertyTitle} a été modifié.`;
+        break;
+
+    case "preslotAcceptByUser":
+        primaryMessage = "Créneau de pré-état des lieux accepté";
+        mainMessage = `${buyerName} a accepté le créneau de pré-état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et les prochaines étapes.`;
+        emailSubject = "Créneau accepté - Bookaroo";
+        previewText = `Le créneau de pré-état des lieux pour ${propertyTitle} a été accepté.`;
+        break;
+    
+    case "preslotBookedByUser":
+        primaryMessage = "Créneau de pré-état des lieux réservé par l'acheteur";
+        mainMessage = `${buyerName} a réservé un créneau de pré-état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et confirmer votre disponibilité.`;
+        emailSubject = "Créneau de pré-état des lieux réservé - Bookaroo";
+        previewText = `${buyerName} a réservé un créneau de pré-état des lieux pour ${propertyTitle}.`;
+        break;
+    
+    case "preslotAcceptByOwner":
+        primaryMessage = "Créneau de pré-état des lieux accepté par le propriétaire";
+        mainMessage = `${ownerName} a accepté le créneau de pré-état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et les prochaines étapes.`;
+        emailSubject = "Créneau accepté par le propriétaire - Bookaroo";
+        previewText = `${ownerName} a accepté le créneau de pré-état des lieux pour ${propertyTitle}.`;
+        break;
+   
+    case "homeInventoryAcceptByUser":
+        primaryMessage = "État des lieux accepté par l'acheteur";
+        mainMessage = `${buyerName} a accepté l'état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails et les prochaines étapes.`;
+        emailSubject = "État des lieux accepté - Bookaroo";
+        previewText = `${buyerName} a accepté l'état des lieux pour ${propertyTitle}.`;
+        break;
+   
+    case "requestToChangeHomeInventorySlot":
+        primaryMessage = "Demande de modification du créneau d'état des lieux";
+        mainMessage = `${buyerName} a demandé une modification du créneau d'état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et gérer cette demande.`;
+        emailSubject = "Demande de modification du créneau d'état des lieux - Bookaroo";
+        previewText = `${buyerName} a demandé une modification du créneau d'état des lieux pour ${propertyTitle}.`;
+        break;
+    
+    case "visitAcceptByUser":
+        primaryMessage = "Visite confirmée par l'acheteur";
+        mainMessage = `${buyerName} a confirmé la visite pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour voir les détails.`;
+        emailSubject = "Visite confirmée - Bookaroo";
+        previewText = `${buyerName} a confirmé la visite pour ${propertyTitle}.`;
+        break;
+
+    case "offerSubmitByUser":
+        primaryMessage = "Offre soumise par l'acheteur";
+        mainMessage = `${buyerName} a soumis une offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour examiner et répondre à cette offre.`;
+        emailSubject = "Nouvelle offre soumise - Bookaroo";
+        previewText = `${buyerName} a soumis une offre pour ${propertyTitle}.`;
+        break;
+
+    case "offerSubmittedByUser":
+        primaryMessage = "Offre envoyée";
+
+        mainMessage = `${buyerName} a soumis une offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour l'examiner et y répondre.`;
+        const fundingTypeText = Array.isArray(buyerPrice?.fundingType)
+            ? buyerPrice.fundingType.join(", ")
+            : (buyerPrice?.fundingType || "-");
+
+        const conditionsText = Array.isArray(buyerPrice?.conditions)
+            ? buyerPrice.conditions.join(", ")
+            : (buyerPrice?.conditions || "-");
+
+        secondaryMessage = `
+            Détails de votre offre :
+            - Montant : ${buyerPrice?.amount || "-"}
+            - Date de validité : ${buyerPrice?.validity_date || "-"}
+            - Date d'emménagement : ${buyerPrice?.move_in || "-"}
+            - Type de financement : ${fundingTypeText}
+            - Conditions suspensives : ${conditionsText}
+            `;
+
+        emailSubject = "Nouvelle offre soumise - Bookaroo";
+        previewText = `${buyerName} a soumis une offre pour ${propertyTitle}.`;
+
+        break;
+
+    case "offerAcceptByUser":
+        primaryMessage = "Offre acceptée par l'acheteur";
+        mainMessage = `${buyerName} a accepté votre offre pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour les prochaines étapes.`;
+        emailSubject = "Offre acceptée par l'acheteur - Bookaroo";
+        previewText = `${buyerName} a accepté votre offre pour ${propertyTitle}.`;
+        break;
+
+    case "preslotOpenedByOwner":
+        primaryMessage = "Créneau de pré-état des lieux ouvert";
+        mainMessage = `${ownerName} a ouvert un créneau de pré-état des lieux pour le bien "${propertyTitle}". Veuillez consulter votre tableau de bord pour choisir votre créneau.`;
+        emailSubject = "Créneau de pré-état des lieux disponible - Bookaroo";
+        previewText = `Un créneau de pré-état des lieux est disponible pour ${propertyTitle}.`;
+        break;
+
+    case "saleslotAcceptedByUser":
+        primaryMessage = "Créneau de vente accepté";
+        mainMessage = `${buyerName} a accepté le créneau de vente proposé pour le bien "${propertyTitle}". Vous pouvez désormais poursuivre les prochaines étapes de la transaction.`;
+        emailSubject = "Créneau de vente accepté - Bookaroo";
+        previewText = `${buyerName} a accepté le créneau de vente pour ${propertyTitle}.`;
+        break;
+
+    case "saleslotAcceptedByOwner":
+        primaryMessage = "Créneau de vente confirmé";
+        mainMessage = `${ownerName} a accepté le créneau de vente pour le bien "${propertyTitle}". La transaction progresse et les deux parties peuvent se préparer à la prochaine étape.`;
+        emailSubject = "Créneau de vente confirmé - Bookaroo";
+        previewText = `${ownerName} a confirmé le créneau de vente pour ${propertyTitle}.`;
+        break;
+
+    case "confirmationByUser":
+        primaryMessage = "Confirmation reçue";
+        mainMessage = `${buyerName} a confirmé les détails de la transaction concernant le bien "${propertyTitle}". Toutes les parties sont désormais prêtes pour la finalisation du processus.`;
+        emailSubject = "Confirmation de transaction reçue - Bookaroo";
+        previewText = `${buyerName} a confirmé la transaction pour ${propertyTitle}.`;
+        break;
+
+    case "confirmationByOwner":
+        primaryMessage = "Confirmation du propriétaire";
+        mainMessage = `${ownerName} a confirmé les détails de la transaction pour le bien "${propertyTitle}". La vente est désormais prête à être finalisée.`;
+        emailSubject = "Confirmation de transaction - Bookaroo";
+        previewText = `${ownerName} a confirmé la transaction pour ${propertyTitle}.`;
+        break;
+
+    case "offerAcceptByOwner":
+        primaryMessage = "Offre acceptée";
+        mainMessage = `${ownerName} a accepté votre offre pour le bien "${propertyTitle}". Vous pouvez maintenant poursuivre les prochaines étapes de la transaction depuis votre tableau de bord.`;
+        emailSubject = "Offre acceptée - Bookaroo";
+        previewText = `Votre offre pour ${propertyTitle} a été acceptée.`;
+        break;
+
+    case "offerRefusedByOwner":
+        primaryMessage = "Offre refusée";
+        mainMessage = `${ownerName} a refusé votre offre pour le bien "${propertyTitle}". Vous pouvez consulter d'autres opportunités ou contacter le propriétaire pour davantage d'informations.`;
+        emailSubject = "Offre refusée - Bookaroo";
+        previewText = `Votre offre pour ${propertyTitle} n'a pas été acceptée.`;
+        break;
+
+    case "applicationAcceptedByOwner":
+        primaryMessage = "Candidature acceptée";
+        mainMessage = `${ownerName} a accepté votre candidature pour le bien "${propertyTitle}". Vous pouvez désormais poursuivre les prochaines étapes du processus depuis votre tableau de bord.`;
+        emailSubject = "Candidature acceptée - Bookaroo";
+        previewText = `Votre candidature pour ${propertyTitle} a été acceptée.`;
+        break;
+
+    case "applicationRejectedByOwner":
+        primaryMessage = "Candidature refusée";
+        mainMessage = `${ownerName} a refusé votre candidature pour le bien "${propertyTitle}". Nous vous encourageons à explorer d'autres opportunités disponibles sur Bookaroo.`;
+        emailSubject = "Candidature refusée - Bookaroo";
+        previewText = `Votre candidature pour ${propertyTitle} n'a pas été retenue.`;
+        break;
+
+    case "requestToChangeFinalSigningSlot":
+        primaryMessage = "Demande de modification du créneau de signature";
+        mainMessage = `${buyerName} a demandé la modification du créneau de signature finale pour le bien "${propertyTitle}". Veuillez consulter la demande et proposer un nouveau créneau si nécessaire.`;
+        emailSubject = "Demande de modification du créneau de signature - Bookaroo";
+        previewText = `Une demande de modification du créneau de signature a été soumise pour ${propertyTitle}.`;
+        break;
+    
+    case "requestToChangeVisitSlot":
+        primaryMessage = "Demande de modification du créneau de visite";
+        mainMessage = `${buyerName} a demandé la modification du créneau de visite pour le bien "${propertyTitle}". Veuillez consulter la demande et mettre à jour votre disponibilité.`;
+        emailSubject = "Demande de modification du créneau de visite - Bookaroo";
+        previewText = `Une demande de modification du créneau de visite a été soumise pour ${propertyTitle}.`;
+        break;
+    
+    case "ownerChangedFinalSigningSlot":
+        primaryMessage = "Créneau de signature mis à jour";
+        mainMessage = `${ownerName} a mis à jour le créneau de signature finale pour le bien "${propertyTitle}". Veuillez consulter les nouveaux détails et confirmer votre disponibilité.`;
+        emailSubject = "Mise à jour du créneau de signature - Bookaroo";
+        previewText = `Le créneau de signature finale a été modifié pour ${propertyTitle}.`;
+        break;
+
+    case "saleslotBookedByUser":
+        primaryMessage = "Nouveau créneau de vente réservé";
+        mainMessage = `${buyerName} a réservé un créneau de vente pour le bien "${propertyTitle}". Veuillez consulter les détails et confirmer votre disponibilité depuis votre tableau de bord.`;
+        emailSubject = "Nouveau créneau de vente réservé - Bookaroo";
+        previewText = `Un nouveau créneau de vente a été réservé pour ${propertyTitle}.`;
+        break;
+
+    case "homeInventoryOpenedByOwner":
+        primaryMessage = "Inventaire du logement disponible";
+        mainMessage = `${ownerName} a ouvert l’inventaire du logement pour le bien "${propertyTitle}". Vous pouvez désormais consulter les informations et éléments renseignés par le propriétaire depuis votre tableau de bord.`;
+        emailSubject = "Inventaire du logement disponible - Bookaroo";
+        previewText = `L’inventaire du logement est désormais disponible pour ${propertyTitle}.`;
+        break;
+
+
+    default:
+      primaryMessage = "Mise à jour de propriété";
+
+      mainMessage = `Une nouvelle activité a été enregistrée concernant le bien "${propertyTitle}".`;
+
+      emailSubject = "Mise à jour - Bookaroo";
+
+      previewText = `Nouvelle activité concernant ${propertyTitle}.`;
+
+      break;
+  }
+  console.log({
+    email: email,
+    subject: emailSubject,
+    type: type,
+  });
+  let subject = emailSubject
+
+  await sendEmail({
+    module: "AUTH",
+
+    to: email,
+
+    subject: emailSubject,
+
+    templateId: constants.BREVO.INTEREST_UPDATE_EMAIL,
+
+    params: {
+      subject,
+      previewText,
+      primaryMessage,
+      mainMessage,
+      secondaryMessage,
+      propertyLink,
+    },
+  });
+};
+
+// const interestUpdateEmail = (options) => {
+//     const { buyerName, price, ownerName, type, propertyTitle, email, propertyLink } = options;
+//     let primayMessage = "";
+//     let mainMessage = "";
+//     let secondaryMessage = "You can still visit the property to explore more details and check its updates. Stay connected for further updates.";
+//     let emailSubject = "";
+
+//     // Determine content based on email type
+//     switch (type) {
+//         case "funnelOfferAccepted":
+//             primayMessage = "Offer Accepted";
+//             mainMessage = `Great news! <strong>${ownerName}</strong> has accepted the offer from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong> at the price of <strong>$${price}</strong>.`;
+//             emailSubject = "Offer Accepted - Bookaroo";
+//             break;
+
+//         case "funnelOfferRefused":
+//             primayMessage = "Offer Refused";
+//             mainMessage = `We regret to inform you that <strong>${ownerName}</strong> has refused the offer from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong> at the proposed price of <strong>$${price}</strong>.`;
+//             emailSubject = "Offer Declined - Bookaroo";
+//             break;
+
+//         case "funnelApplicationAccepted":
+//             primayMessage = "Application Accepted";
+//             mainMessage = `Congratulations! <strong>${ownerName}</strong> has accepted the application from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong>.`;
+//             emailSubject = "Application Approved - Bookaroo";
+//             break;
+
+//         case "funnelApplicationRefused":
+//             primayMessage = "Application Refused";
+//             mainMessage = `We regret to inform you that <strong>${ownerName}</strong> has refused the application from <strong>${buyerName}</strong> for the property titled <strong>${propertyTitle}</strong>.`;
+//             emailSubject = "Application Declined - Bookaroo";
+//             break;
+
+//         default:
+//             mainMessage = `There has been activity regarding <strong>${propertyTitle}</strong> between <strong>${buyerName}</strong> and <strong>${ownerName}</strong>.`;
+//             emailSubject = "Activity Update - Bookaroo";
+//     }
+
+//     const message = `<!DOCTYPE html>
+//     <html>
+//     <head>
+//         <title>Bookaroo</title>
+//         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+//         <link rel="preconnect" href="https://fonts.googleapis.com">
+//         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+//         <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+//         <style>
+//             @media (max-width:767px) {
+//                 .w-100 { width: 100%; }
+//                 .fz-20 { font-size: 25px !important; }
+//             }
+//         </style>
+//     </head>
+//     <body style="font-family: 'Poppins', sans-serif; background:#fff;">
+//         <table width="100%" cellpadding="0" cellspacing="0">
+//             <tbody>
+//                 <tr>
+//                     <td style="padding: 50px 20px;">
+//                         <table width="676px" cellpadding="0" cellspacing="0" style="margin: 0 auto; background:#F2F5FF;" class="w-100">
+//                             <tr><td style="height:40px;"></td></tr>
+//                             <tr>
+//                                 <td style="text-align:center; padding-bottom: 10px; height: 50px;">
+//                                     <img src="${BACK_WEB_URL}/img/image-1728022466713-723.png" style="width: 120px; margin: 0 auto;" />
+//                                 </td>
+//                             </tr>
+//                             <tr>
+//                                 <td style="padding: 20px 60px;">
+//                                     <table width="100%" cellpadding="0" cellspacing="0">
+//                                         <tr><td style="border-bottom: 1px solid #E2E8F0;"></td></tr>
+//                                     </table>
+//                                 </td>
+//                             </tr>
+//                             <tr>
+//                                 <td style="text-align:center; padding-bottom: 10px;">
+//                                     <img src="${BACK_WEB_URL}/img/image-1728022760309-8794.png" style="width: 340px; margin: 0 auto;" />
+//                                 </td>
+//                             </tr>
+//                             <tr>
+//                                 <td style="padding: 20px 60px;">
+//                                     <table width="100%" cellpadding="0" cellspacing="0">
+//                                         <tr><td style="border-bottom: 1px solid #E2E8F0;"></td></tr>
+//                                     </table>
+//                                 </td>
+//                             </tr>
+//                             <tr>
+//                                 <td style="padding: 15px 0 25px 0;">
+//                                 <h2 style="text-align: center; color: #6D6D6D">${primayMessage}</h2>
+//                                     <p style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
+//                                         ${mainMessage}
+//                                     </p>
+//                                     <p style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
+//                                         ${secondaryMessage}
+//                                     </p>
+//                                 </td>
+//                             </tr>
+//                             <tr>
+//                                 <td style="display: flex; justify-content: center; gap: 10px;">
+//                                     <a href="${propertyLink}" style="font-size: 14px; padding: 14px 30px; text-align:center; margin:0 auto; background: #976DD0!important; cursor: pointer; border: none; color: #fff; display:inline-block; border-radius:5px;">
+//                                         Visit Property
+//                                     </a>
+//                                 </td>
+//                             </tr>
+//                             <tr><td style="height:60px;"></td></tr>
+//                         </table>
+//                     </td>
+//                 </tr>
+//             </tbody>
+//         </table>
+//     </body>
+//     </html>`;
+
+//     // SmtpController.sendEmail(email, emailSubject, message);
+//     sendEmail({
+//         module: "auth",
+//         to: email,
+//         subject: emailSubject,
+//         htmlContent: message
+//     });
+
+// }
 
 const propertyTransferEmail = (options) => {
-    let email = options.email;
-    let propertyTitle = options.propertyTitle;
-    let transferorName = options.ownerName; // Name of the user transferring the property
-    let transfereeName = options.buyerName; // Name of the recipient of the property
-    let propertyLink = options.propertyLink;
+  let email = options.email;
+  let propertyTitle = options.propertyTitle;
+  let transferorName = options.ownerName; // Name of the user transferring the property
+  let transfereeName = options.buyerName; // Name of the recipient of the property
+  let propertyLink = options.propertyLink;
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -3746,26 +4176,25 @@ const propertyTransferEmail = (options) => {
 </html>
 `;
 
-    // SmtpController.sendEmail(email, "Property Transfer Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Property Transfer Confirmation",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Property Transfer Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Property Transfer Confirmation",
+    htmlContent: message,
+  });
 };
 
 const renterTransferEmail = (options) => {
-    let email = options.email;
-    let propertyTitle = options.propertyTitle;
-    let transferorName = options.ownerName; // Name of the user transferring the property
-    let transfereeName = options.renterName; // Name of the recipient of the property
-    let propertyLink = options.propertyLink;
+  let email = options.email;
+  let propertyTitle = options.propertyTitle;
+  let transferorName = options.ownerName; // Name of the user transferring the property
+  let transfereeName = options.renterName; // Name of the recipient of the property
+  let propertyLink = options.propertyLink;
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -3883,25 +4312,25 @@ const renterTransferEmail = (options) => {
 </html>
 `;
 
-    // SmtpController.sendEmail(email, "Renter Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Renter Confirmation",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "Renter Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Renter Confirmation",
+    htmlContent: message,
+  });
 };
 
 const ownerCongratsEmail = (options) => {
-    let email = options.email;
-    let propertyTitle = options.propertyTitle;
-    let ownerName = options.ownerName; // Name of the user transferring the property
-    let renterName = options.renterName; // Name of the recipient of the property
-    // let buyerName = options.buyerName;
-    let propertyLink = options.propertyLink;
-    let type = options.type;
-    if (type === "renterCase") {
-        dynamicContent = `
+  let email = options.email;
+  let propertyTitle = options.propertyTitle;
+  let ownerName = options.ownerName; // Name of the user transferring the property
+  let renterName = options.renterName; // Name of the recipient of the property
+  // let buyerName = options.buyerName;
+  let propertyLink = options.propertyLink;
+  let type = options.type;
+  if (type === "renterCase") {
+    dynamicContent = `
             <p
                 style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
                 We're delighted to inform you that you have successfully rented the property titled <strong>${propertyTitle}</strong> from <strong>${ownerName}</strong>.
@@ -3911,8 +4340,8 @@ const ownerCongratsEmail = (options) => {
                 Stay connected with us like this. Visit your new renter property below.
             </p>
         `;
-    } else {
-        dynamicContent = `
+  } else {
+    dynamicContent = `
             <p
                 style="font-size:16px; max-width: 400px; margin:0 auto; text-align: center; color: #6D6D6D; line-height: 25px; padding: 0 20px;">
                 We're delighted to inform you that you have successfully purchased the property titled <strong>${propertyTitle}</strong> from <strong>${ownerName}</strong>.
@@ -3922,11 +4351,11 @@ const ownerCongratsEmail = (options) => {
                 Congratulations on your new property! Visit your new property below.
             </p>
         `;
-    }
+  }
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -4041,24 +4470,21 @@ const ownerCongratsEmail = (options) => {
 </html>
 `;
 
-    // SmtpController.sendEmail(email, "Buyer Confirmation", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Buyer Confirmation",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Buyer Confirmation", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Buyer Confirmation",
+    htmlContent: message,
+  });
 };
 
 const notifyOwner = (options) => {
+  let { email, buyerName, propertyTitle, ownerName } = options;
 
-    let { email, buyerName, propertyTitle, ownerName } = options;
+  let message = "";
 
-
-    let message = "";
-
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
 <html>
 
 <head>
@@ -4165,24 +4591,20 @@ const notifyOwner = (options) => {
 
 </html>`;
 
-    // SmtpController.sendEmail(email, "Property Transfer Request", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Property Transfer Request",
-        htmlContent: message
-    });
-
-
-
+  // SmtpController.sendEmail(email, "Property Transfer Request", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Property Transfer Request",
+    htmlContent: message,
+  });
 };
 
 const ownerDocsNotify = (options) => {
+  let { email, buyerName, propertyTitle, OwnerName } = options;
 
-    let { email, buyerName, propertyTitle, OwnerName } = options;
-
-    let message = "";
-    message = `<!DOCTYPE html>
+  let message = "";
+  message = `<!DOCTYPE html>
     <html>
     
     <head>
@@ -4246,28 +4668,22 @@ const ownerDocsNotify = (options) => {
     
     </html>`;
 
-    // SmtpController.sendEmail(email, "Documents Shared Notification", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Documents Shared Notification",
-        htmlContent: message
-    });
-
+  // SmtpController.sendEmail(email, "Documents Shared Notification", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Documents Shared Notification",
+    htmlContent: message,
+  });
 };
 
 const contractSignedEmail = (options) => {
-    const {
-        propertyTitle,
-        buyerName,
-        ownerName,
-        signerName,
-    } = options;
-    let email = options.ownerEmail;
+  const { propertyTitle, buyerName, ownerName, signerName } = options;
+  let email = options.ownerEmail;
 
-    let message = "";
+  let message = "";
 
-    message += `<!DOCTYPE html>
+  message += `<!DOCTYPE html>
   <html>
   <head>
     <title>Bookaroo</title>
@@ -4346,43 +4762,43 @@ const contractSignedEmail = (options) => {
     </table>
   </body>
   </html>`;
-    // SmtpController.sendEmail(email, "Contract Signed Notification", message);
-    sendEmail({
-        module: "auth",
-        to: email,
-        subject: "Contract Signed Notification",
-        htmlContent: message
-    });
+  // SmtpController.sendEmail(email, "Contract Signed Notification", message);
+  sendEmail({
+    module: "auth",
+    to: email,
+    subject: "Contract Signed Notification",
+    htmlContent: message,
+  });
 };
 
 module.exports = {
-    forgotPasswordEmail,
-    addUserEmail,
-    userVerifyLink,
-    updatePasswordEmail,
-    invite_user_email,
-    verificationOtp,
-    DocumentVerifyLink,
-    ClaimVenueRequest,
-    sendCredential,
-    sendVerificationMail,
-    addStaffEmail,
-    welcomeUser,
-    forgotPasswordEmailForUser,
-    loginCredentialEmail,
-    contactUsEmail,
-    changePasswordConfirmation,
-    changeEmail,
-    changeEmailOtp,
-    SendPersonalDataPro,
-    SendPersonalDataIndividual,
-    nonExistingUserShare,
-    existingUserShare,
-    interestUpdateEmail,
-    propertyTransferEmail,
-    renterTransferEmail,
-    ownerCongratsEmail,
-    notifyOwner,
-    ownerDocsNotify,
-    contractSignedEmail
+  forgotPasswordEmail,
+  addUserEmail,
+  userVerifyLink,
+  updatePasswordEmail,
+  invite_user_email,
+  verificationOtp,
+  DocumentVerifyLink,
+  ClaimVenueRequest,
+  sendCredential,
+  sendVerificationMail,
+  addStaffEmail,
+  welcomeUser,
+  forgotPasswordEmailForUser,
+  loginCredentialEmail,
+  contactUsEmail,
+  changePasswordConfirmation,
+  changeEmail,
+  changeEmailOtp,
+  SendPersonalDataPro,
+  SendPersonalDataIndividual,
+  nonExistingUserShare,
+  existingUserShare,
+  interestUpdateEmail,
+  propertyTransferEmail,
+  renterTransferEmail,
+  ownerCongratsEmail,
+  notifyOwner,
+  ownerDocsNotify,
+  contractSignedEmail,
 };

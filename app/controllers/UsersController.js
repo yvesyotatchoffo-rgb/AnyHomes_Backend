@@ -12,6 +12,7 @@ var bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const constants = require("../utls/constants");
 const Emails = require("../Emails/onBoarding");
+const { sendEmail } = require("../config/brevo.config");
 const helper = require("../utls/helper");
 const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
@@ -291,10 +292,18 @@ module.exports = {
           { otp: otp }
         );
 
-        await Emails.verificationOtp({
-          email: user.email,
-          fullName: user.fullName,
-          otp: otp,
+        await sendEmail({
+          module: "AUTH",
+          to: user.email,
+          subject: "Code OTP de vérification de compte",
+          templateId: constants.BREVO.SEND_VERIFICATION_OTP,
+          params: {
+            fullName: user.fullName,
+            otp: otp,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/otp-banner.png`
+          }
         });
         return res.status(400).json({
           success: true,
@@ -324,7 +333,21 @@ module.exports = {
             deviceToken: data.deviceToken
             // mode: data.mode
           }
-          await Emails.verificationOtp(email_payload);
+          await sendEmail({
+            module: "AUTH",
+            to: user.email,
+            subject: "Code OTP de vérification de compte",
+            templateId: constants.BREVO.SEND_VERIFICATION_OTP,
+            params: {
+              fullName: user.fullName,
+              otp: generateOtp,
+              deviceId: data.deviceId,
+              deviceToken: data.deviceToken,
+              appName: "AnyHomes",
+              logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+              bannerImage: `${process.env.BACK_WEB_URL}/img/otp-banner.png`
+            }
+          });
           return res.status(200).json({
             success: true,
             code: 200,
@@ -1085,7 +1108,37 @@ module.exports = {
 
 
           };
-          await Emails.changeEmail(email_payload);
+          let payload = {}
+          if (data.mode === 'mobile') {
+            payload = {
+              module: "AUTH",
+              to: data.currentEmail,
+              subject: "Confirmation du changement d'adresse email",
+              templateId: constants.BREVO.MOBILE_TEMPLATE_ID,
+              params: {
+                fullName: userData.firstName,
+                generateOtp: generateOtp,
+                appName: "AnyHomes",
+                logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                bannerImage: `${process.env.BACK_WEB_URL}/img/change-email-banner.png`
+              }
+            }
+          } else {
+            payload = {
+              module: "AUTH",
+              to: data.currentEmail,
+              subject: "Confirmez votre nouvelle adresse email",
+              templateId: constants.BREVO.LINK_TEMPLATE_ID,
+              params: {
+                fullName: userData.firstName,
+                confirmationUrl: `${process.env.FRONT_WEB_URL}/reset-email?otp=${generateOtp}&email=${data.newEmail}`,
+                appName: "AnyHomes",
+                logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                bannerImage: `${process.env.BACK_WEB_URL}/img/change-email-banner.png`
+              }
+            }
+          }
+          await sendEmail(payload);
           return res.status(200).json({
             success: true,
             code: 200,
@@ -1145,7 +1198,38 @@ module.exports = {
             mode: data.mode,
 
           };
-          await Emails.changeEmailOtp(email_payload);
+          if (data.mode === 'mobile') {
+            await sendEmail({
+              module: "AUTH",
+              to: data.newEmail,
+              subject: "Code OTP pour confirmer votre nouvelle adresse email",
+              templateId: constants.BREVO.OTP_FOR_CHANGE_EMAIL_MOBILE,
+              params: {
+                fullName: userData.firstName,
+                generateOtp: generateOtp,
+                currentEmail: data.currentEmail,
+                appName: "AnyHomes",
+                logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                bannerImage: `${process.env.BACK_WEB_URL}/img/change-email-banner.png`
+              }
+            });
+          } else {
+            await sendEmail({
+              module: "AUTH",
+              to: data.newEmail,
+              subject: "Confirmez votre nouvelle adresse email",
+              templateId: constants.BREVO.OTP_FOR_CHANGE_EMAIL_WEB,
+              params: {
+                fullName: userData.firstName,
+                currentEmail: data.currentEmail,
+                newEmail: data.newEmail,
+                confirmationUrl: `${process.env.FRONT_WEB_URL}/reset-new-email?otp=${generateOtp}&email=${data.newEmail}&currentEmail=${data.currentEmail}`,
+                appName: "AnyHomes",
+                logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                bannerImage: `${process.env.BACK_WEB_URL}/img/change-email-banner.png`
+              }
+            });
+          }
           return res.status(200).json({
             success: true,
             code: 200,
@@ -2081,7 +2165,18 @@ module.exports = {
           email: user.email,
           fullName: user.fullName,
         };
-        await Emails.changePasswordConfirmation(emailpayload);
+        await sendEmail({
+          module: "AUTH",
+          to: user.email,
+          subject: "Votre mot de passe a été modifié avec succès",
+          templateId: constants.BREVO.CHANGE_PASSWORD_CONFIRMATION,
+          params: {
+            fullName: user.fullName,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/password-changed-banner.png`
+          }
+        });
         logActivity(user._id, "password_change", { label: "Changement de mot de passe", objectType: "user" });
         return res.status(200).json({
           success: true,
@@ -2136,7 +2231,19 @@ module.exports = {
           role: user.role,
         };
 
-        await Emails.forgotPasswordEmail(email_payload);
+        await sendEmail({
+          module: "AUTH",
+          to: user.email,
+          subject: "Réinitialisation de votre mot de passe",
+          templateId: constants.BREVO.FORGOT_PASSWORD_ADMIN,
+          params: {
+            fullName: user.fullName,
+            appName: "AnyHomes",
+            resetUrl: `${process.env.ADMIN_WEB_URL}/reset-password?code=${verificationCode}&id=${user.id}`,
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/reset-password-banner.png`
+          }
+        });
         return res.status(200).json({
           success: true,
           message: constants.onBoarding.VERIFICATION_CODE_SENT,
@@ -2203,7 +2310,20 @@ module.exports = {
           role: user.role,
           verificationCode: verificationCode,
         };
-        await Emails.forgotPasswordEmailForUser(email_payload);
+        await sendEmail({
+          module: "AUTH",
+          to: user.email,
+          subject: "Code OTP pour réinitialiser votre mot de passe",
+          templateId: constants.BREVO.FORGOT_PASSWORD_USER,
+          params: {
+            firstName: user.fullName,
+            verificationCode: verificationCode,
+            resetUrl: `${process.env.FRONT_WEB_URL}/reset-password?id=${user.id}&verificationCode=${verificationCode}`,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/otp-banner.png`
+          }
+        });
         return res.status(200).json({
           success: true,
           message: constants.onBoarding.OTP_SENT,
@@ -2525,7 +2645,22 @@ module.exports = {
           password: password,
           role: newUser.role,
         };
-        await Emails.addUserEmail(email_payload);
+        await sendEmail({
+          module: "AUTH",
+          to: newUser.email,
+          subject: "Votre compte a été créé avec succès",
+          templateId: constants.BREVO.ADD_USER_FROM_ADMIN,
+          params: {
+            fullName: newUser.fullName,
+            email: newUser.email,
+            password: password,
+            role: newUser.role,
+            appName: "AnyHomes",
+            loginUrl: `${process.env.FRONT_WEB_URL}/login`,
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/welcome-banner.png`
+          }
+        });
 
         return res.status(200).json({
           success: true,
@@ -2641,7 +2776,22 @@ module.exports = {
           password: password,
           role: newUser.role,
         };
-        await Emails.addStaffEmail(email_payload);
+        await sendEmail({
+          module: "AUTH",
+          to: newUser.email,
+          subject: "Votre compte collaborateur a été créé",
+          templateId: constants.BREVO.COLLABORATOR_ACCOUNT_CREATED,
+          params: {
+            fullName: newUser.fullName,
+            email: newUser.email,
+            password: password,
+            role: newUser.role,
+            appName: "AnyHomes",
+            loginUrl: `${process.env.ADMIN_WEB_URL}/login`,
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/welcome-banner.png`
+          }
+        });
         return res.status(200).json({
           success: true,
           message: constants.STAFF.STAFF_ADDED,
@@ -2877,7 +3027,23 @@ module.exports = {
           id: newUser.id,
           type: newUser.type,
         };
-        await Emails.invite_user_email(email_payload);
+        await sendEmail({
+          module: "AUTH",
+          to: newUser.email,
+          subject: "Bienvenue sur AnyHomes – Votre compte a été créé",
+          templateId: constants.BREVO.INVITE_USER_FROM_ADMIN,
+          params: {
+            id: newUser.id,
+            fullName: newUser.fullName,
+            email: newUser.email,
+            password: password,
+            role: findRole.name ? findRole.name : "",
+            type: newUser.type,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/welcome-banner.png`
+          }
+        });
 
         return res.status(200).json({
           success: true,
@@ -3032,7 +3198,22 @@ module.exports = {
           role: createdUser.role,
         };
 
-        await Emails.loginCredentialEmail(emailPayload);
+        await sendEmail({
+          module: "AUTH",
+          to: createdUser.email,
+          subject: "Vos identifiants de connexion sont prêts",
+          templateId: constants.BREVO.SEND_LOGIN_CREDENTIAL,
+          params: {
+            fullName: createdUser.fullName,
+            email: createdUser.email,
+            password: data.password,
+            role: createdUser.role,
+            appName: "AnyHomes",
+            loginUrl: `${process.env.FRONT_WEB_URL}/login`,
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+            bannerImage: `${process.env.BACK_WEB_URL}/img/welcome-banner.png`
+          }
+        });
 
         const setting_payload = {
           user_id: createdUser.id,
@@ -3268,10 +3449,16 @@ module.exports = {
             otp: verificationOtp,
           }
         );
-        await Emails.verificationOtp({
-          email: req.body.email,
-          fullName: userData.fullName,
-          otp: verificationOtp,
+        await sendEmail({
+          module: "AUTH",
+          to: req.body.email,
+          subject: "Votre code de vérification Bookaroo",
+          templateId: constants.BREVO.VERIFICATION_OTP,
+          params: {
+            fullName: userData.fullName,
+            otp: verificationOtp,
+            year: new Date().getFullYear(),
+          },
         });
 
         return res.status(200).json({
@@ -3561,6 +3748,17 @@ module.exports = {
 
       const createdUser = await Users.create(data);
 
+      // Referral attribution — if a ref code was supplied, attribute the signup
+      const refCode = req.body.ref || req.query.ref || null;
+      const inviteToken = req.body.inv || req.query.inv || null;
+      if (refCode) {
+        const ReferralController = require("./ReferralController");
+        ReferralController.attributeSignup(createdUser._id, refCode, {
+          ip: req.ip || null,
+          userAgent: req.headers["user-agent"] || null,
+        }, inviteToken).catch(() => {}); // non-blocking
+      }
+
       let setting_payload = {
         user_id: createdUser.id,
         new_messages: {
@@ -3607,7 +3805,16 @@ module.exports = {
         id: createdUser.id,
         role: createdUser.role,
       };
-      await Emails.userVerifyLink(emailPayload);
+      await sendEmail({
+        module: "AUTH",
+        to: createdUser.email,
+        subject: "Vérification de votre adresse e-mail Bookaroo",
+        templateId: constants.BREVO.USER_VERIFICATION_LINK,
+        params: {
+          fullName: createdUser.fullName,
+          otp: otp,
+        },
+      });
 
       // let email_payload = {
       //   email: data.email,
@@ -3853,42 +4060,52 @@ module.exports = {
       }
       let accountType = findUser.accountType;
       if (accountType == "individual") {
-        let email_payload_individual = {
-          firstName: findUser.firstName,
-          lastName: findUser.lastName,
-          email: findUser.email,
-          images: findUser.images,
-          city: findUser.city,
-          street: findUser.street,
-          state: findUser.state,
-          country: findUser.country,
-          pinCode: findUser.pinCode,
-          mobileNo: findUser.mobileNo,
-          username: findUser.username,
-        };
-        await Emails.SendPersonalDataIndividual(email_payload_individual);
+        const addressParts = [
+          findUser.street, findUser.city, findUser.state,
+          findUser.country, findUser.pinCode,
+        ].filter(Boolean);
+        const fullAddress = addressParts.join(", ");
+        await sendEmail({
+          module: "AUTH",
+          to: findUser.email,
+          subject: "Vos informations personnelles Bookaroo",
+          templateId: constants.BREVO.PERSONAL_INFORMATION_MAIL,
+          params: {
+            firstName: findUser.firstName || "",
+            lastName: findUser.lastName || "",
+            username: findUser.username || "",
+            email: findUser.email || "",
+            mobileNo: findUser.mobileNo || "",
+            fullAddress: fullAddress || "",
+          },
+        });
       } else {
-        let email_payload_pro = {
-          firstName: findUser.firstName,
-          lastName: findUser.lastName,
-          email: findUser.email,
-          images: findUser.images,
-          city: findUser.city,
-          street: findUser.street,
-          state: findUser.state,
-          country: findUser.country,
-          pinCode: findUser.pinCode,
-          mobileNo: findUser.mobileNo,
-          username: findUser.username,
-          companyRole: findUser.companyRole,
-          companyName: findUser.companyName,
-          companyEmail: findUser.companyEmail,
-          companyContactNumber: findUser.companyContactNumber,
-          website: findUser.website,
-          coverImage: findUser.coverImage,
-          companyLogo: findUser.companyLogo,
-        }
-        await Emails.SendPersonalDataPro(email_payload_pro);
+        const addressParts = [
+          findUser.street, findUser.city, findUser.state,
+          findUser.country, findUser.pinCode,
+        ].filter(Boolean);
+        const fullAddress = addressParts.join(", ");
+        await sendEmail({
+          module: "AUTH",
+          to: findUser.email,
+          subject: "Vos informations professionnelles Bookaroo",
+          templateId: constants.BREVO.PERSONAL_INFORMATION_PRO_MAIL,
+          params: {
+            firstName: findUser.firstName || "",
+            lastName: findUser.lastName || "",
+            username: findUser.username || "",
+            email: findUser.email || "",
+            mobileNo: findUser.mobileNo || "",
+            fullAddress: fullAddress || "",
+            companyName: findUser.companyName || "",
+            companyRole: findUser.companyRole || "",
+            companyEmail: findUser.companyEmail || "",
+            companyContactNumber: findUser.companyContactNumber || "",
+            website: findUser.website || "",
+            companyLogo: findUser.companyLogo || "",
+            coverImage: findUser.coverImage || "",
+          },
+        });
       }
       return res.status(200).json({
         success: true,

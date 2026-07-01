@@ -12,6 +12,9 @@ const MarketplaceSettings = require('../models/MarketplaceSettings.model');
 const stripeService = require('../services/stripeMarketplaceService');
 const db = require('../../../models');
 const Users = db.users;
+const { sendEmail } = require('../../../config/brevo.config');
+const constants = require('../../../utls/constants');
+const { formatDisplayName } = require('../../../utls/formatDisplayName');
 
 const DEFAULT_PAYMENT_INFO = "Vous payez le service à la commande et les fonds ne seront transmis au professionnel qu'au moment où vous nous confirmerez que le service a bien été réalisé par le professionnel.";
 
@@ -571,6 +574,26 @@ exports.createOrder = async (req, res) => {
 
     // ── Services gratuits : pas de Stripe, retour direct ────────────────────
     if (isFreeService) {
+      // Email de confirmation commande gratuite → acheteur
+      try {
+        const buyerName = req.identity.fullName || req.identity.firstName || '';
+        const proEmail = service.pro.email;
+        const proName = formatDisplayName(service.pro);
+        await sendEmail({
+          to: [{ email: buyerEmail, name: buyerName }],
+          templateId: constants.BREVO.SERVICE_ORDER_CONFIRMATION,
+          params: {
+            buyerName,
+            serviceTitle: service.title || service.title_fr || '',
+            quantity,
+            totalPriceTTC,
+            proName,
+            orderId: String(order._id),
+          },
+        });
+      } catch (emailErr) {
+        console.error('[Email] SERVICE_ORDER_CONFIRMATION (free):', emailErr.message);
+      }
       return res.status(201).json({
         success: true,
         data: order,
@@ -824,6 +847,31 @@ exports.confirmOrderDelivery = async (req, res) => {
     order.payoutReleasedAt = new Date();
     await order.save();
 
+    // Emails paiement libéré → acheteur + pro
+    try {
+      const buyerUser = await Users.findById(order.buyer).select('email fullName firstName lastName username accountType').lean();
+      const buyerEmail = buyerUser?.email;
+      const buyerName = formatDisplayName(buyerUser);
+      const proEmail = order.proSnapshot?.email;
+      const proName = formatDisplayName(order.proSnapshot);
+      const serviceTitle = order.serviceSnapshot?.title || order.serviceSnapshot?.title_fr || '';
+      const emailParams = {
+        buyerName, proName, serviceTitle,
+        totalPriceTTC: order.totalPriceTTC,
+        proAmount: order.proAmount,
+        orderId: String(order._id),
+        confirmedAt: new Date().toLocaleDateString('fr-FR'),
+      };
+      if (buyerEmail) {
+        await sendEmail({ to: [{ email: buyerEmail, name: buyerName }], templateId: constants.BREVO.SERVICE_PAYMENT_RELEASED, params: { ...emailParams, role: 'buyer' } });
+      }
+      if (proEmail) {
+        await sendEmail({ to: [{ email: proEmail, name: proName }], templateId: constants.BREVO.SERVICE_PAYMENT_RELEASED, params: { ...emailParams, role: 'pro' } });
+      }
+    } catch (emailErr) {
+      console.error('[Email] SERVICE_PAYMENT_RELEASED:', emailErr.message);
+    }
+
     return res.json({ success: true, data: order, message: 'Livraison confirmée, paiement pro libéré' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
@@ -985,6 +1033,30 @@ exports.openLitigation = async (req, res) => {
     order.litigationDescription = String(description || '').trim() || null;
     order.litigationInitiatedBy = 'buyer';
     await order.save();
+
+    // Notify buyer + pro by email
+    try {
+      const { ServiceOrder: _so, ...rest } = getModels(lang);
+      const [buyer, proUser] = await Promise.all([
+        db.users.findById(order.buyer, 'email fullName firstName').lean(),
+        db.users.findById(order.pro, 'email fullName firstName').lean(),
+      ]);
+      const serviceDoc = await rest.ProService?.findById(order.service, 'title title_fr').lean().catch(() => null);
+      const serviceTitle = serviceDoc?.title_fr || serviceDoc?.title || '';
+      const emailParams = {
+        serviceTitle,
+        orderId: String(order._id),
+        description: order.litigationDescription || 'Non précisé',
+        initiatedBy: 'Acheteur',
+        litigationDate: new Date().toLocaleDateString('fr-FR'),
+      };
+      const sends = [];
+      if (buyer?.email) sends.push(sendEmail({ to: [{ email: buyer.email, name: buyer.fullName || buyer.firstName || '' }], templateId: constants.BREVO.LITIGATION_OPENED, params: { ...emailParams, recipientName: buyer.fullName || buyer.firstName || '' } }));
+      if (proUser?.email) sends.push(sendEmail({ to: [{ email: proUser.email, name: proUser.fullName || proUser.firstName || '' }], templateId: constants.BREVO.LITIGATION_OPENED, params: { ...emailParams, recipientName: proUser.fullName || proUser.firstName || '' } }));
+      await Promise.allSettled(sends);
+    } catch (emailErr) {
+      console.error('[Email] LITIGATION_OPENED (buyer):', emailErr.message);
+    }
 
     return res.json({ success: true, data: order, message: 'Litige ouvert, un admin va prendre en charge' });
   } catch (err) {

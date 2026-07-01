@@ -4,6 +4,7 @@ var bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const constants = require("../utls/constants");
 const Emails = require("../Emails/onBoarding");
+const { sendEmail } = require("../config/brevo.config");
 const helper = require("../utls/helper");
 var mongoose = require("mongoose");
 const multer = require("multer");
@@ -102,7 +103,22 @@ module.exports = {
                     password: password,
                     role: newUser.role,
                 };
-                await Emails.addUserEmail(email_payload);
+                await sendEmail({
+                    module: "AUTH",
+                    to: newUser.email,
+                    subject: "Votre compte a été créé avec succès",
+                    templateId: constants.BREVO.ADD_USER_ACCOUNT_CREATED,
+                    params: {
+                        fullName: newUser.fullName,
+                        email: newUser.email,
+                        password: password,
+                        role: newUser.role,
+                        appName: "AnyHomes",
+                        loginUrl: `${process.env.FRONT_WEB_URL}/login`,
+                        logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                        bannerImage: `${process.env.BACK_WEB_URL}/img/welcome-banner.png`
+                    }
+                });
 
                 return res.status(200).json({
                     success: true,
@@ -519,7 +535,18 @@ module.exports = {
                                     bcrypt.genSaltSync(10)
                                 );
                                 let payload = { email: user.email }
-                                await Emails.welcomeUser(payload)
+                                await sendEmail({
+                                    module: "AUTH",
+                                    to: user.email,
+                                    subject: "Bienvenue sur AnyHomes",
+                                    templateId: constants.BREVO.WELCOME_USER,
+                                    params: {
+                                        email: user.email,
+                                        appName: "AnyHomes",
+                                        loginUrl: `${process.env.FRONT_WEB_URL}/login`,
+                                        logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                                    }
+                                });
                                 let createdUser = await Users.create(user);
                             } else {
                                 alreadyExist = alreadyExist + 1;

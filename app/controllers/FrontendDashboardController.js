@@ -1046,6 +1046,15 @@ module.exports = {
                   property: { id: 'prop-3', coverUrl: '/assets/img/dashboard/attractivity/attractivity-3.jpg', type: 'Appartement', surface: 78, city: 'Lyon' },
                   action: { route: '/buyer-file' },
                 },
+                {
+                  id: 'todo-4',
+                  type: 'CREATE_QR_CODE',
+                  label: 'Créer le QR code de votre bien',
+                  role: 'OWNER',
+                  priority: 4,
+                  property: { id: 'prop-1', coverUrl: '/assets/img/dashboard/attractivity/attractivity-1.jpg', type: 'Maison', surface: 100, city: 'Paris' },
+                  action: { route: '/property/qr-code' },
+                },
               ],
             },
             propertyAttractivity: {

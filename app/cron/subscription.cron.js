@@ -2,6 +2,8 @@ const cron = require('node-cron');
 const db = require("../models");
 const Emails = require("../Emails/paymentEmail");
 const moment = require('moment');
+const { sendEmail } = require("../config/brevo.config");
+const constants = require('../utls/constants');
 
 
 
@@ -121,18 +123,60 @@ const checkAndSendSubscriptionReminders = () => {
                 await Promise.all(batch.map(async sub => {
                     try {
                         const user = sub.userId;
+                        const formattedDate = moment(sub.validUpto).format("DD/MM/YYYY");
+                        const reminderMessages = {
+                            twoWeekEmail: {
+                                greeting: "Votre abonnement expire bientôt",
+                                mainText: `Votre abonnement expirera le ${formattedDate} (dans 14 jours). Veuillez vérifier votre moyen de paiement afin d’éviter toute interruption de service.`,
+                                buttonText: "Mettre à jour le paiement",
+                                subject: "Votre abonnement expire bientôt"
+                            },
+                            oneWeekEmail: {
+                                greeting: "Rappel de renouvellement",
+                                mainText: `Votre abonnement prendra fin le ${formattedDate} (dans 7 jours). Merci de vérifier les informations de votre abonnement.`,
+                                buttonText: "Voir l’abonnement",
+                                subject: "Rappel de renouvellement d’abonnement"
+                            },
+                            onDayEmail: {
+                                greeting: "Dernier rappel",
+                                mainText: `Votre abonnement expire aujourd’hui (${formattedDate}). Renouvelez maintenant pour éviter toute interruption de service.`,
+                                buttonText: "Renouveler maintenant",
+                                subject: "Dernier rappel de renouvellement"
+                            }
+                        };
                         const typeMap = {
                             14: "twoWeekEmail",
                             7: "oneWeekEmail",
                             1: "onDayEmail"
                         };
+                        const content = reminderMessages[typeMap[daysLeft]];
+                        let payload = {
+                            module: "AUTH",
+                            to: user.email,
+                            subject: content.subject,
+                            templateId: constants.BREVO.SUBSCRIPTION_REMINDER,
+                            params: {
+                                fullName: user.fullName || "",
+                                greeting: content.greeting || "",
+                                mainText: content.mainText || "",
+                                buttonText: content.buttonText || "",
+                                subscriptionUrl: `${process.env.FRONT_WEB_URL}/subscriptions`, 
+                            }, 
+                        }
+                        await sendEmail(payload);
 
-                        await Emails.subscriptionRemainder({
-                            email: user.email,
-                            fullName: user.fullName,
-                            validUpto: sub.validUpto,
-                            type: typeMap[daysLeft]
-                        });
+                        // const typeMap = {
+                        //     14: "twoWeekEmail",
+                        //     7: "oneWeekEmail",
+                        //     1: "onDayEmail"
+                        // };
+
+                        // await Emails.subscriptionRemainder({
+                        //     email: user.email,
+                        //     fullName: user.fullName,
+                        //     validUpto: sub.validUpto,
+                        //     type: typeMap[daysLeft]
+                        // });
                         await db.notifications.create({
                             sendTo: user._id,
                             sendByWhere: "Bookaro",

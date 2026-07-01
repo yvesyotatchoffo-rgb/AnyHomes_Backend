@@ -50,6 +50,10 @@ module.exports = (mongoose) => {
         index: true,
       },
       label: { type: String, default: "" },
+      // Extra fields for profile_view events
+      duration: { type: Number, default: null },          // seconds spent on the profile
+      sectionVisited: { type: String, default: null },    // e.g. "photos", "map", "description", "attractivity", "timeline"
+      phoneRevealed: { type: Boolean, default: null },    // whether the phone number was revealed
       metadata: { type: Schema.Types.Mixed, default: {} },
     },
     { timestamps: true }

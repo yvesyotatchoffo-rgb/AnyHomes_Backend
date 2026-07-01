@@ -301,5 +301,57 @@ module.exports = {
     DELETED: "School deleted successfully.",
     ID_REQ: "Id is required.",
     NOT_EXISTS: "School either doesn't exists or has been deleted."
+  },
+  BREVO: {
+    SIGNUP_CONFIRMATION: 88,
+    PROPERTY_TRANSFER_REQUEST: 90,
+    FORGOT_PASSWORD_ADMIN: 91,
+    FORGOT_PASSWORD_USER: 92,
+    SEND_VERIFICATION_OTP: 93,
+    MOBILE_TEMPLATE_ID: 94,
+    LINK_TEMPLATE_ID: 95,
+    OTP_FOR_CHANGE_EMAIL_MOBILE: 96,
+    OTP_FOR_CHANGE_EMAIL_WEB: 97,
+    CHANGE_PASSWORD_CONFIRMATION: 98,
+    ADD_USER_FROM_ADMIN: 99,
+    COLLABORATOR_ACCOUNT_CREATED: 100,
+    INVITE_USER_FROM_ADMIN: 101,
+    SEND_LOGIN_CREDENTIAL: 102,
+    VERIFICATION_OTP: 103,
+    USER_VERIFICATION_LINK: 104,
+    PERSONAL_INFORMATION_MAIL: 105,
+    PERSONAL_INFORMATION_PRO_MAIL: 106,
+    SUBSCRIPTION_REMINDER: 107,
+    NON_EXISTING_USER_SHARE: 108,
+    EXISTING_USER_SHARE: 109,
+    CONTRACT_SIGNED_NOTIFICATION: 110,
+    PROPERTY_TRANSFER_CONFIRMATION: 111,
+    OWNER_CONGRATS_EMAIL: 112,
+    CONTACT_US_NOTIFICATION: 113,
+    ADD_USER_ACCOUNT_CREATED: 114,
+    WELCOME_USER: 115,
+    RENTER_TRANSFER_NOTIFICATION: 116,
+    OWNER_DOCS_NOTIFY: 117,
+    INTEREST_UPDATE_EMAIL: 118,
+    INTEREST_IN_PROPERTY_RECEIVED: 119,
+    PROPERTY_VISIT_REQUEST_TEMPLATE_ID: 120,
+    BUYER_VISIT_ACCEPTED_TEMPLATE_ID: 121,
+    // Marketplace services à la carte
+    SERVICE_ORDER_CONFIRMATION: 122,   // buyer: order confirmed & paid
+    SERVICE_DELIVERED_BUYER: 123,      // buyer: pro marked as delivered, confirm button
+    SERVICE_DELIVERED_PRO: 124,        // pro: delivery registered, awaiting buyer confirmation
+    SERVICE_PAYMENT_RELEASED: 125,     // both: payment released to pro
+    // Weekly digest — v1: owners with properties (top 10 + learning + platform stats)
+    WEEKLY_DIGEST_WITH_PROPS: 126,
+    // Weekly digest — v2: users without properties (learning + platform stats only)
+    WEEKLY_DIGEST_NO_PROPS: 127,
+    // New chat message received (offline recipient, 60-min cooldown per sender)
+    NEW_MESSAGE_NOTIFICATION: 128,
+    // Property created confirmation sent to the owner
+    PROPERTY_CREATED_CONFIRMATION: 129,
+    // Litigation opened on a marketplace service order (sent to buyer + pro)
+    LITIGATION_OPENED: 130,
+    // Referral invitation sent by email (in-app modal)
+    REFERRAL_EMAIL_INVITE: 131,
   }
 };

@@ -1,10 +1,19 @@
 "use strict";
 let _ = require("lodash");
 const services = require(".");
+const { formatDisplayName } = require('../utls/formatDisplayName');
 global.redis_users = [];
 const connected_users = [];
 const db = require("../models");
 const { send_fcm_push_notification } = require("./FcmServices");
+const { sendEmail } = require("../config/brevo.config");
+const constants = require("../utls/constants");
+
+// --- Message email cooldown ---
+// Key: `${recipientId}_${senderId}` → timestamp of last email sent
+// Cleared when recipient reconnects (join-room event)
+const msgEmailCooldowns = new Map();
+const MSG_EMAIL_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 const { default: mongoose } = require("mongoose");
 const { duration } = require("moment");
 const BACKEND_WEB_URL = process.env.BACK_WEB_URL || `http://localhost:${process.env.PORT || 6089}`;
@@ -284,6 +293,11 @@ exports.initializeSocket = function (startServer) {
           data.room_id = data.room_id;
           connected_users.push(data);
         }
+        // Clear message email cooldowns for this user (they are now online)
+        const prefix = `${data.user_id}_`;
+        for (const key of msgEmailCooldowns.keys()) {
+          if (key.startsWith(prefix)) msgEmailCooldowns.delete(key);
+        }
 
         io.emit("join-room", {
           status: 200,
@@ -501,24 +515,39 @@ exports.initializeSocket = function (startServer) {
 
         const receiver = await db.users.findById(reciever_id);
         if (!receiver.isOnline) {
-          // console.log("NOTI ENTERED")
-          const senderDetails = await db.users.findOne({ _id: reciever_id });
-          const messageContent = `${senderDetails.firstName} sent you a new message`;
-          const [notification] = await Promise.all([
-            db.notifications.create({
-              sendTo: reciever_id,
-              sendBy: sender,
-              title: "New Message",
-              message: messageContent,
-              type: "message",
-              status: "unread",
-              created_at: new Date(),
-              property_id: propertyId
-            }),
+          const senderDetails = await db.users.findOne({ _id: sender }, { firstName: 1, fullName: 1, lastName: 1, username: 1, companyName: 1, accountType: 1 });
+          const messageContent = `${senderDetails?.firstName || senderDetails?.fullName || 'Quelqu\'un'} sent you a new message`;
+          const notification = await db.notifications.create({
+            sendTo: reciever_id,
+            sendBy: sender,
+            title: "New Message",
+            message: messageContent,
+            type: "message",
+            status: "unread",
+            created_at: new Date(),
+            property_id: propertyId
+          });
 
-            // send_fcm_push_notification(...)
-            // console.log("NOTI DONE")
-          ]);
+          // Email with 60-min cooldown per sender→recipient pair
+          const cooldownKey = `${reciever_id}_${sender}`;
+          const lastSent = msgEmailCooldowns.get(cooldownKey);
+          const now = Date.now();
+          if (!lastSent || now - lastSent > MSG_EMAIL_COOLDOWN_MS) {
+            msgEmailCooldowns.set(cooldownKey, now);
+            const frontendUrl = process.env.FRONTEND_URL || 'https://app.anyhomes.fr';
+            sendEmail({
+              to: [{ email: receiver.email, name: receiver.fullName || receiver.firstName || '' }],
+              templateId: constants.BREVO.NEW_MESSAGE_NOTIFICATION,
+              params: {
+                recipientName: receiver.fullName || receiver.firstName || '',
+                senderName: formatDisplayName(senderDetails) || 'Un utilisateur',
+                propertyTitle: property?.propertyTitle || '',
+                messagePreview: String(data.message || '').slice(0, 120),
+                chatUrl: `${frontendUrl}/chat?propertyId=${propertyId}`,
+                settingsUrl: `${frontendUrl}/profile/manage-notifications`,
+              },
+            }).catch(err => console.error('[Email] NEW_MESSAGE_NOTIFICATION:', err.message));
+          }
         }
 
         const unreadCount = await db.chatcommonoperations.countDocuments({

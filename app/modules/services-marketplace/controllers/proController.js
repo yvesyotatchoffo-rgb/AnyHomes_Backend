@@ -6,6 +6,10 @@ const ServiceReviewEn = require('../models/ServiceReview_en.model');
 const ServiceReviewFr = require('../models/ServiceReview_fr.model');
 const MarketplaceSettings = require('../models/MarketplaceSettings.model');
 const stripeService = require('../services/stripeMarketplaceService');
+const db = require('../../../models');
+const { sendEmail } = require('../../../config/brevo.config');
+const { formatDisplayName } = require('../../../utls/formatDisplayName');
+const constants = require('../../../utls/constants');
 
 function getModels(lang) {
   const l = lang === 'en' ? 'en' : 'fr';
@@ -363,6 +367,41 @@ exports.deliverOrder = async (req, res) => {
     order.deliveredAt = new Date();
     await order.save();
 
+    // Emails livraison : acheteur (avec bouton confirmation) + pro (accusé)
+    try {
+      const buyerUser = await db.users.findById(order.buyer).select('email fullName firstName lastName username accountType').lean();
+      const proUser = await db.users.findById(proId).select('email fullName companyName firstName lastName accountType').lean();
+      const serviceTitle = order.serviceSnapshot?.title || order.serviceSnapshot?.title_fr || '';
+      const orderUrl = `${process.env.FRONT_WEB_URL || 'http://localhost:8089'}/marketplace/orders/${order._id}`;
+      if (buyerUser?.email) {
+        await sendEmail({
+          to: [{ email: buyerUser.email, name: buyerUser.fullName || buyerUser.firstName || '' }],
+          templateId: constants.BREVO.SERVICE_DELIVERED_BUYER,
+          params: {
+            buyerName: formatDisplayName(buyerUser),
+            proName: formatDisplayName(proUser),
+            serviceTitle,
+            deliveryMessage: order.deliveryMessage || '',
+            confirmUrl: orderUrl,
+            orderId: String(order._id),
+          },
+        });
+      }
+      if (proUser?.email) {
+        await sendEmail({
+          to: [{ email: proUser.email, name: proUser.fullName || proUser.companyName || '' }],
+          templateId: constants.BREVO.SERVICE_DELIVERED_PRO,
+          params: {
+            proName: proUser.fullName || proUser.companyName || '',
+            serviceTitle,
+            orderId: String(order._id),
+          },
+        });
+      }
+    } catch (emailErr) {
+      console.error('[Email] SERVICE_DELIVERED:', emailErr.message);
+    }
+
     return res.json({ success: true, data: order, message: 'Livraison signalée, en attente de confirmation acheteur' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
@@ -539,6 +578,30 @@ exports.openLitigation = async (req, res) => {
     order.litigationDescription = String(req.body.description || '').trim() || null;
     order.litigationInitiatedBy = 'pro';
     await order.save();
+
+    // Notify buyer + pro by email
+    try {
+      const [buyer, proUser] = await Promise.all([
+        db.users.findById(order.buyer, 'email fullName firstName').lean(),
+        db.users.findById(order.pro, 'email fullName firstName').lean(),
+      ]);
+      const { ProService } = getModels(lang);
+      const serviceDoc = await ProService.findById(order.service, 'title title_fr').lean().catch(() => null);
+      const serviceTitle = serviceDoc?.title_fr || serviceDoc?.title || '';
+      const emailParams = {
+        serviceTitle,
+        orderId: String(order._id),
+        description: order.litigationDescription || 'Non précisé',
+        initiatedBy: 'Prestataire',
+        litigationDate: new Date().toLocaleDateString('fr-FR'),
+      };
+      const sends = [];
+      if (buyer?.email) sends.push(sendEmail({ to: [{ email: buyer.email, name: buyer.fullName || buyer.firstName || '' }], templateId: constants.BREVO.LITIGATION_OPENED, params: { ...emailParams, recipientName: buyer.fullName || buyer.firstName || '' } }));
+      if (proUser?.email) sends.push(sendEmail({ to: [{ email: proUser.email, name: proUser.fullName || proUser.firstName || '' }], templateId: constants.BREVO.LITIGATION_OPENED, params: { ...emailParams, recipientName: proUser.fullName || proUser.firstName || '' } }));
+      await Promise.allSettled(sends);
+    } catch (emailErr) {
+      console.error('[Email] LITIGATION_OPENED (pro):', emailErr.message);
+    }
 
     return res.json({ success: true, data: order, message: 'Litige ouvert, un admin va prendre en charge' });
   } catch (err) {

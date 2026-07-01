@@ -4,6 +4,7 @@ let mongoose = require("mongoose");
 const constants = require("../utls/constants");
 const csvParser = require("csv-parser");
 const multer = require("multer");
+const { sendEmail } = require("../config/brevo.config");
 const {
   createObjectCsvStringifier
 } = require("csv-writer");
@@ -13,6 +14,7 @@ const {
 const fs = require("fs");
 const Emails = require("../Emails/onBoarding");
 const { handleServerError } = require("../utls/helper");
+const { formatDisplayName } = require("../utls/formatDisplayName");
 const { STATUS } = require("../utls/enums");
 const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
@@ -254,6 +256,14 @@ const buildGuestProperties = (req) => {
       rooms: "4",
       bedrooms: "2",
       price: 890000,
+      addedBy_details: {
+        _id: "guest-owner-sale",
+        firstName: "Sophie",
+        lastName: "Martin",
+        companyName: "ImmoPlus Conseil",
+        accountType: "pro",
+        image: buildGuestProspectImage(req, GUEST_PROSPECT_IMAGES[0]),
+      },
     },
     {
       _id: "guest-prop-rent",
@@ -271,6 +281,14 @@ const buildGuestProperties = (req) => {
       rooms: "1",
       bedrooms: "0",
       propertyMonthlyCharges: 2500,
+      addedBy_details: {
+        _id: "guest-owner-rent",
+        firstName: "Thomas",
+        lastName: "Dubois",
+        companyName: "Gestion Locative Paris",
+        accountType: "pro",
+        image: buildGuestProspectImage(req, GUEST_PROSPECT_IMAGES[10]),
+      },
     },
   ];
 };
@@ -367,6 +385,27 @@ module.exports = {
 
       logActivity(req.identity.id, "property_create", { label: "Bien publié", objectType: "property", objectId: property._id, objectTitle: data.propertyTitle || "" });
 
+      // Send property creation confirmation email to the owner (fire & forget)
+      try {
+        const owner = await db.users.findById(req.identity.id, 'email fullName firstName').lean();
+        if (owner?.email) {
+          const frontendUrl = process.env.FRONTEND_URL || 'https://app.anyhomes.fr';
+          const typeLabel = property.propertyType === 'rent' ? 'Location' : property.propertyType === 'offmarket' ? 'Off-market' : 'Vente';
+          sendEmail({
+            to: [{ email: owner.email, name: owner.fullName || owner.firstName || '' }],
+            templateId: constants.BREVO.PROPERTY_CREATED_CONFIRMATION,
+            params: {
+              ownerName: owner.fullName || owner.firstName || '',
+              propertyTitle: property.propertyTitle || '',
+              propertyType: typeLabel,
+              managementUrl: `${frontendUrl}/real-estate-transaction-owner`,
+            },
+          }).catch(err => console.error('[Email] PROPERTY_CREATED_CONFIRMATION:', err.message));
+        }
+      } catch (emailErr) {
+        console.error('[Email] PROPERTY_CREATED_CONFIRMATION setup:', emailErr.message);
+      }
+
       return res.status(200).json({
         success: true,
         data: property,
@@ -389,7 +428,8 @@ module.exports = {
     try {
       let id = req.query.id;
       let userId = req.query.userId;
-      const isGuestRequest = ["true", true, "1", 1].includes(req.query.guest) || String(id || "").startsWith("guest-");
+      const isGuestMockId = String(id || "").startsWith("guest-");
+      const isGuestRequest = (["true", true, "1", 1].includes(req.query.guest) || isGuestMockId) && isGuestMockId;
       if (!id) {
         return res.status(400).json({
           success: false,
@@ -426,8 +466,12 @@ module.exports = {
         });
       }
 
+      // Ignore guest placeholder user IDs — skip DB lookups that would fail
+      const GUEST_IDS = ['guest-user-000', '000000000000000000000000'];
+      const isRealUser = userId && !GUEST_IDS.includes(String(userId));
+
       let isInterested = false;
-      if (userId) {
+      if (isRealUser) {
         const findUserInterest = await db.interests.findOne({
           buyerId: userId,
           propertyId: id,
@@ -465,7 +509,7 @@ module.exports = {
         isDeleted: false
       });
       if (
-        userId &&
+        isRealUser &&
         req.query.isVisit === "true" &&
         String(propertyDetail.addedBy._id) !== String(userId)
       ) {
@@ -603,6 +647,15 @@ module.exports = {
       let pageSize = Number(count) || 20;
       if (pageSize <= 0) pageSize = 20;
       if (pageSize > 100) pageSize = 100;
+
+      // Guest mode: return mock properties only for /my-properties (addedBy=guest-user-000)
+      // Do NOT use guest headers here — they are sent on ALL requests including /properties (search)
+      const isGuestListing = addedBy === "guest-user-000";
+      if (isGuestListing) {
+        const guestProps = buildGuestProperties(req);
+        return res.json({ success: true, data: guestProps, total: guestProps.length });
+      }
+
       var query = {};
       if (agencyId) {
         const agencyObjectId = parseObjectId(agencyId);
@@ -1644,6 +1697,9 @@ module.exports = {
           createdAt: 1,
           addedBy: 1,
           propertyType: 1,
+          location: 1,
+          exactLocation: 1,
+          randomLocation: 1,
         };
 
         const total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
@@ -3788,7 +3844,7 @@ module.exports = {
         isDeleted: false,
         _id: userId
       });
-      let senderName = findSender.fullName;
+      let senderName = formatDisplayName(findSender);
 
       const findUserByEmail = await db.users.findOne({
         isDeleted: false,
@@ -3833,8 +3889,24 @@ module.exports = {
           signUpLink: `http://195.35.8.196:8089/Signup`,
           propertyLink: `http://195.35.8.196:8089/property-details?id=${propertyId}`,
         }
-        await Emails.nonExistingUserShare(nonExistingEmail);
+        await sendEmail({
+          module: "AUTH",
+          to: email,
+          subject: "Une propriété a été partagée avec vous",
+          templateId: constants.BREVO.NON_EXISTING_USER_SHARE,
+          params: {
+            name: senderName,
+            email: email,
+            propertyId: propertyId,
+            userId: userId,
+            signUpLink: `${process.env.FRONT_WEB_URL}/Signup`,
+            propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${propertyId}`,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+          }
+        });
 
+        logPropertyActivity(propertyId, "share", { userId, label: "Partage du bien par un utilisateur" });
         return res.status(200).json({
           success: true,
           message: "Email sent to the User."
@@ -3870,8 +3942,23 @@ module.exports = {
           userId: userId,
           propertyLink: `http://195.35.8.196:8089/property-details?id=${propertyId}`
         }
-        await Emails.existingUserShare(existingEmail);
+        await sendEmail({
+          module: "AUTH",
+          to: email,
+          subject: "Une propriété a été partagée avec vous",
+          templateId: constants.BREVO.EXISTING_USER_SHARE,
+          params: {
+            name: senderName,
+            email: email,
+            propertyId: propertyId,
+            userId: userId,
+            propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${propertyId}`,
+            appName: "AnyHomes",
+            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+          }
+        });
 
+        logPropertyActivity(propertyId, "share", { userId, label: "Partage du bien par un utilisateur" });
         return res.status(200).json({
           success: true,
           message: "Email sent to the User"

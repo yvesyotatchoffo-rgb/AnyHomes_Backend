@@ -6,6 +6,7 @@ const Users = db.users;
 const unprotectedPrefixes = [
   "/marketplace/pro-stats/",
   "/marketplace/favorite-pros",
+  "/admin/referrals/", // Referral admin analytics
 ];
 
 module.exports = async (req, res, next) => {

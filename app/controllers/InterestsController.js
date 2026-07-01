@@ -4,6 +4,10 @@ const visitInvite = require("../Emails/visitInvite");
 const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
 const logPropertyActivity = require("../services/propertyActivityLog.service");
+const constants = require("../utls/constants");
+const { sendEmail } = require("../config/brevo.config");
+const fcm_service = require("../services/FcmServices");
+const { formatDisplayName } = require('../utls/formatDisplayName');
 
 const buildGuestProspectImage = (req, filename) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
@@ -793,9 +797,9 @@ module.exports = {
                     // const buyerDetail = await db.users.findById(buyerId)
                     const email_payload = {
                         ownerEmail: ownerDetail?.email,
-                        ownerName: ownerDetail?.fullName,
+                        ownerName: formatDisplayName(ownerDetail),
                         propertyName: property?.propertyTitle || "",
-                        buyerName: findBuyer.fullName,
+                        buyerName: formatDisplayName(findBuyer),
                         buyerEmail: findBuyer.email,
                     };
 
@@ -803,9 +807,9 @@ module.exports = {
 
                     const buyerEmailPayload = {
                         ownerEmail: ownerDetail?.email,
-                        ownerName: ownerDetail?.fullName,
+                        ownerName: formatDisplayName(ownerDetail),
                         propertyName: property?.propertyTitle || "",
-                        buyerName: findBuyer.fullName,
+                        buyerName: formatDisplayName(findBuyer),
                         buyerEmail: findBuyer.email,
                     }
                     await visitInvite.buyerPropertyVisitRequest(buyerEmailPayload);
@@ -881,6 +885,7 @@ module.exports = {
 
             let saveNewInterest = await newInterest.save();
             logActivity(buyerId, "offer_sent", { label: `Intérêt envoyé pour ${property.propertyTitle || "un bien"}`, objectType: "property", objectId: propertyId, objectTitle: property.propertyTitle || "" });
+            logPropertyActivity(propertyId, "offer_sent", { userId: buyerId, label: `Intérêt / Offre reçue` });
             let createNotification = await db.notifications.create({
                 sendTo: property.addedBy,
                 sendBy: buyerId,
@@ -901,9 +906,9 @@ module.exports = {
                 // const buyerDetail = await db.users.findById(buyerId)
                 const email_payload = {
                     ownerEmail: ownerDetail?.email,
-                    ownerName: ownerDetail?.fullName,
+                    ownerName: formatDisplayName(ownerDetail),
                     propertyName: property?.propertyTitle || "",
-                    buyerName: findBuyer.fullName,
+                    buyerName: formatDisplayName(findBuyer),
                     buyerEmail: findBuyer.email,
                 };
 
@@ -911,9 +916,9 @@ module.exports = {
 
                 const buyerEmailPayload = {
                     ownerEmail: ownerDetail?.email,
-                    ownerName: ownerDetail?.fullName,
+                    ownerName: formatDisplayName(ownerDetail),
                     propertyName: property?.propertyTitle || "",
-                    buyerName: findBuyer.fullName,
+                    buyerName: formatDisplayName(findBuyer),
                     buyerEmail: findBuyer.email,
                 }
                 await visitInvite.buyerPropertyVisitRequest(buyerEmailPayload);
@@ -1421,7 +1426,7 @@ module.exports = {
             )
                 .populate({
                     path: 'buyerId',
-                    select: 'fullName email' // Only select the fullName field from the buyer
+                    select: 'fullName email firstName lastName accountType username companyName'
                 })
                 .lean();
             if (!interest) {
@@ -1431,7 +1436,7 @@ module.exports = {
                 });
             }
 
-            const buyerName = interest.buyerId?.firstName;
+            const buyerName = formatDisplayName(interest.buyerId);
             const buyerEmail = interest.buyerId?.email;
 
             if (funnelStatus === "offer accept by owner" && (finalPrice === undefined || typeof finalPrice !== "number")) {
@@ -1456,10 +1461,21 @@ module.exports = {
             })
                 .populate({
                     path: "addedBy",
-                    select: "fullName image email"
+                    select: "fullName image email firstName lastName accountType username companyName"
                 })
-            const ownerName = findProperty.addedBy?.firstName;
+            const ownerName = formatDisplayName(findProperty.addedBy);
             const ownerEmail = findProperty.addedBy?.email;
+
+            // FCM push notification helper
+            const notifyUser = async (userId, title, message) => {
+                await fcm_service.send_fcm_push_notification({
+                    sendTo: userId,
+                    title,
+                    message,
+                    property_id: propertyId?.toString() || ""
+                });
+            };
+
             const documentRequested =
                 interest.documentRequested ||
                 interest.funnelStatus === "buyer requested for document" ||
@@ -1484,9 +1500,162 @@ module.exports = {
                     status: "unread",
                     title: "user-seller-files-request-notification",
                     message: `${buyerName} has requested your seller files for property titled ${findProperty.propertyTitle}`
-
                 })
-                console.log("Buyer document request notificatin done");
+                // FCM to owner
+                await notifyUser(findProperty.addedBy._id, "Document Request", `${buyerName} has requested your seller files`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName,
+                    ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: ownerEmail,
+                    propertyLink: redirectPath,
+                    type: "buyerRequestedDocument"
+                });
+                console.log("Buyer document request notification done");
+            }
+
+            if (funnelStatus === "invite user for a visit") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Visit Invitation",
+                    message: `${ownerName} has invited you to visit ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Visit Invitation", `${ownerName} has invited you to visit ${findProperty.propertyTitle}`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: redirectPath,
+                    type: "visitInvitation"
+                });
+            }
+
+            if (funnelStatus === "offer submit by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "New Offer",
+                    message: `${ownerName} has submitted an offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "New Offer", `${ownerName} has submitted an offer for ${findProperty.propertyTitle}`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: redirectPath,
+                    type: "ownerOfferSubmitted",
+                    ownerPrice: ownerPrice || interest.ownerPrice,
+                    buyerPrice: buyerPrice || interest.buyerPrice,
+                });
+            }
+
+            if (funnelStatus === "preslot booked by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Inspection Slot Booked",
+                    message: `${ownerName} has booked a pre-inspection slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Pre-Inspection Slot Booked", `${ownerName} has booked a pre-inspection slot`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: redirectPath,
+                    type: "preslotBookedByOwner"
+                });
+            }
+
+            if (funnelStatus === "signing date booked by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Signing Date Booked",
+                    message: `${ownerName} has booked a signing date for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Signing Date Booked", `${ownerName} has booked a signing date`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: redirectPath,
+                    type: "signingDateBookedByOwner"
+                });
+            }
+
+            if (funnelStatus === "offer submit by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "New Offer Submitted",
+                    message: `${buyerName} has submitted an offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "New Offer Submitted", `${buyerName} has submitted an offer`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: ownerEmail,
+                    propertyLink: redirectPath,
+                    type: "offerSubmittedByUser",
+                    buyerPrice: buyerPrice || interest.buyerPrice
+                });
+            }
+
+            if (funnelStatus === "offer accept by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Offer Accepted",
+                    message: `${buyerName} has accepted your offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Offer Accepted", `${buyerName} has accepted your offer`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: ownerEmail,
+                    propertyLink: redirectPath,
+                    type: "offerAcceptByUser"
+                });
+            }
+
+            if (funnelStatus === "preslot opened by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Inspection Slot Opened",
+                    message: `${ownerName} has opened a pre-inspection slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Pre-Inspection Slot Opened", `${ownerName} has opened a pre-inspection slot`);
+                let redirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: redirectPath,
+                    type: "preslotOpenedByOwner"
+                });
             }
 
             if (funnelStatus === "visit accept by user") {
@@ -1528,6 +1697,24 @@ module.exports = {
                         }
                     )
                 }
+                // Notify owner
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Visit Accepted",
+                    message: `${buyerName} has accepted the visit for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Visit Accepted", `${buyerName} has accepted the visit`);
+                const visitRedirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: ownerEmail,
+                    propertyLink: visitRedirectPath,
+                    type: "visitAcceptByUser"
+                });
             }
 
             if (["contract signed by user", "contract signed by owner"].includes(funnelStatus)) {
@@ -1558,44 +1745,49 @@ module.exports = {
                         status: "unread",
                         title: "contract-signing-notification",
                         message: `${buyerName} has signed the contract for ${findProperty.propertyTitle}`
-                    })
-
-                    await db.notifications.create({
-                        sendTo: interest.buyerId,
-                        sendBy: findProperty.addedBy,
-                        property_id: propertyId,
-                        status: "unread",
-                        title: "contract-signing-notification",
-                        message: `${buyerName} has signed the contract for ${findProperty.propertyTitle}`
-                    })
+                    });
+                    await notifyUser(findProperty.addedBy._id, "contract-signing-notification", `${buyerName} has signed the contract`);
                     contractEmailPayloadForOwner.signerName = buyerName;
                     contractEmailPayloadForBuyer.signerName = buyerName;
+                    await sendEmail({
+                        module: "AUTH",
+                        to: ownerEmail,
+                        subject: "Notification de signature de contrat",
+                        templateId: constants.BREVO.CONTRACT_SIGNED_NOTIFICATION,
+                        params: {
+                            ownerName: contractEmailPayloadForOwner.ownerName || "",
+                            signerName: contractEmailPayloadForOwner.signerName || "",
+                            propertyTitle: findProperty.propertyTitle || "",
+                            dashboardUrl: `${process.env.FRONT_WEB_URL}/dashboard`,
+                        },
+                    });
                 }
 
                 if (funnelStatus === "contract signed by owner") {
                     await db.notifications.create({
-                        sendTo: findProperty.addedBy,
-                        sendBy: interest.buyerId,
-                        property_id: propertyId,
-                        status: "unread",
-                        title: "contract-signing-notification",
-                        message: `${ownerName} has signed the contract for ${findProperty.propertyTitle}`
-                    })
-
-                    await db.notifications.create({
                         sendTo: interest.buyerId,
                         sendBy: findProperty.addedBy,
                         property_id: propertyId,
                         status: "unread",
                         title: "contract-signing-notification",
                         message: `${ownerName} has signed the contract for ${findProperty.propertyTitle}`
-                    })
+                    });
+                    await notifyUser(interest.buyerId._id, "contract-signing-notification", `${ownerName} has signed the contract.`);
                     contractEmailPayloadForOwner.signerName = ownerName;
                     contractEmailPayloadForBuyer.signerName = buyerName;
+                    await sendEmail({
+                        module: "AUTH",
+                        to: buyerEmail,
+                        subject: "Notification de signature de contrat",
+                        templateId: constants.BREVO.CONTRACT_SIGNED_NOTIFICATION,
+                        params: {
+                            ownerName: contractEmailPayloadForBuyer.ownerName || "",
+                            signerName: contractEmailPayloadForBuyer.signerName || "",
+                            propertyTitle: findProperty.propertyTitle || "",
+                            dashboardUrl: `${process.env.FRONT_WEB_URL}/dashboard`,
+                        },
+                    });
                 }
-
-                await Emails.contractSignedEmail(contractEmailPayloadForOwner);
-                await Emails.contractSignedEmail(contractEmailPayloadForBuyer)
 
             }
 
@@ -1611,7 +1803,24 @@ module.exports = {
                     propertyInformation: review?.propertyInformation,
                     peacefullSetting: review?.peacefullSetting,
                     note: review?.note
-                })
+                });
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Review Submitted",
+                    message: `${buyerName} has submitted a review for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Review Submitted", `${buyerName} has submitted a review.`);
+                let reviewRedirectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: ownerEmail,
+                    propertyLink: reviewRedirectPath,
+                    type: "funnelReviewSubmitted"
+                });
             }
 
             data.propertyId = propertyId;
@@ -1672,40 +1881,454 @@ module.exports = {
             );
 
             if (funnelStatus === "offer accept by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Offer Accepted",
+                    message: `${ownerName} has accepted your offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Offer Accepted", `${ownerName} has accepted your offer`);
+                const offerAcceptPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: offerAcceptPath,
+                    type: "offerAcceptByOwner"
+                });
                 const createTimeline = await db.timeline.create({
                     propertyId,
                     addedBy: req.identity.id,
                     type: "interestStatus",
                     finalPrice: finalPrice,
                     funnelStatus: "offer accepted"
-                })
+                });
             }
             if (funnelStatus === "offer refused by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Offer Refused",
+                    message: `${ownerName} has declined your offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Offer Refused", `${ownerName} has declined your offer`);
+                const offerRefusePath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: offerRefusePath,
+                    type: "offerRefusedByOwner"
+                });
                 const createTimeline = await db.timeline.create({
                     propertyId,
                     type: "interestStatus",
                     refusedPrice: Number(updatedInterest.buyerPrice.amount),
                     addedBy: req.identity.id,
                     funnelStatus: "offer refused"
-                })
+                });
             }
             if (funnelStatus === "owner accept the application") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Application Accepted",
+                    message: `${ownerName} has accepted your application for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Application Accepted", `${ownerName} has accepted your application`);
+                const appAcceptPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: appAcceptPath,
+                    type: "applicationAcceptedByOwner"
+                });
                 const createTimeline = await db.timeline.create({
                     propertyId,
                     type: "interestStatus",
-                    // applicationPrice: Number(ownerPrice ? ownerPrice : buyerPrice),
                     addedBy: req.identity.id,
                     funnelStatus: "application refused"
-                })
+                });
             }
             if (funnelStatus === "owner reject the application") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Application Rejected",
+                    message: `${ownerName} has rejected your application for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Application Rejected", `${ownerName} has rejected your application`);
+                const appRejectPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({
+                    buyerName, ownerName,
+                    propertyTitle: findProperty.propertyTitle,
+                    email: buyerEmail,
+                    propertyLink: appRejectPath,
+                    type: "applicationRejectedByOwner"
+                });
                 const createTimeline = await db.timeline.create({
                     propertyId,
                     type: "interestStatus",
-                    // applicationPrice: Number(updatedInterest.finalPrice),
                     addedBy: req.identity.id,
                     funnelStatus: "application accepted"
-                })
+                });
+            }
+
+            if (funnelStatus === "owner changed the slot") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Slot Changed",
+                    message: `${ownerName} has changed the visit slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Slot Changed", `${ownerName} has changed the visit slot`);
+                const slotChangedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: slotChangedPath, type: "ownerChangedSlot" });
+            }
+
+            if (funnelStatus === "visit hosted") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Visit Completed",
+                    message: `Your visit for ${findProperty.propertyTitle} has been completed`
+                });
+                await notifyUser(interest.buyerId._id, "How was your visit?", `Leave a review, request documents, make an offer, or let the owner know your decision.`);
+                const visitHostedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: visitHostedPath, type: "visitHosted" });
+            }
+
+            if (funnelStatus === "document send by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Documents Sent",
+                    message: `${ownerName} has sent documents for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Documents Sent", `${ownerName} has sent documents for ${findProperty.propertyTitle}`);
+                const docSentPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: docSentPath, type: "documentSentByOwner" });
+            }
+
+            if (funnelStatus === "offer refused by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Offer Refused",
+                    message: `${buyerName} has refused your offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Offer Refused", `${buyerName} has refused your offer`);
+                const offerRefusedByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: offerRefusedByUserPath, type: "offerRefusedByUser" });
+            }
+
+            if (funnelStatus === "offer sent") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "New Offer Received",
+                    message: `${buyerName} has sent an offer for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "New Offer Received", `${buyerName} has sent an offer`);
+                const offerSentPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: offerSentPath, type: "offerSent" });
+            }
+
+            if (funnelStatus === "saleslot booked by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Slot Booked",
+                    message: `${ownerName} has booked a sale slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Sale Slot Booked", `${ownerName} has booked a sale slot`);
+                const saleslotOwnerPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: saleslotOwnerPath, type: "saleslotBookedByOwner" });
+            }
+
+            if (funnelStatus === "saleslot accept by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Slot Accepted",
+                    message: `${buyerName} has accepted the sale slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Sale Slot Accepted", `${buyerName} has accepted the sale slot.`);
+                const saleslotAcceptByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: saleslotAcceptByUserPath, type: "saleslotAcceptedByUser" });
+            }
+
+            if (funnelStatus === "saleslot accept by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Slot Accepted",
+                    message: `${ownerName} has accepted the sale slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Sale Slot Accepted", `${ownerName} has accepted the sale slot.`);
+                const saleslotAcceptByOwnerPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: saleslotAcceptByOwnerPath, type: "saleslotAcceptedByOwner" });
+            }
+
+            if (funnelStatus === "confirmation by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Confirmed",
+                    message: `${buyerName} has confirmed the sale process for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Sale Confirmed", `${buyerName} has confirmed the sale process.`);
+                const confByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: confByUserPath, type: "confirmationByUser" });
+            }
+
+            if (funnelStatus === "confirmation by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Confirmed",
+                    message: `${ownerName} has confirmed the sale process for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Sale Confirmed", `${ownerName} has confirmed the sale process.`);
+                const confByOwnerPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: confByOwnerPath, type: "confirmationByOwner" });
+            }
+
+            if (funnelStatus === "request to change the pre-sale slot") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Slot Change Request",
+                    message: `${buyerName} has requested to change the pre-sale slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Slot Change Request", `${buyerName} has requested to change the pre-sale slot`);
+                const presaleChangePath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: presaleChangePath, type: "requestToChangePresaleSlot" });
+            }
+
+            if (funnelStatus === "owner changed the pre-signing slot") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Signing Slot Changed",
+                    message: `${ownerName} has changed the pre-signing slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Pre-Signing Slot Changed", `${ownerName} has changed the pre-signing slot`);
+                const presigningChangedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: presigningChangedPath, type: "ownerChangedPresigningSlot" });
+            }
+
+            if (funnelStatus === "preslot accept by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Inspection Slot Accepted",
+                    message: `${buyerName} has accepted the pre-inspection slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Pre-Inspection Slot Accepted", `${buyerName} has accepted the pre-inspection slot`);
+                const preslotAcceptByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: preslotAcceptByUserPath, type: "preslotAcceptByUser" });
+            }
+
+            if (funnelStatus === "preslot booked by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Inspection Slot Booked",
+                    message: `${buyerName} has booked a pre-inspection slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Pre-Inspection Slot Booked", `${buyerName} has booked a pre-inspection slot`);
+                const preslotBookedByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: preslotBookedByUserPath, type: "preslotBookedByUser" });
+            }
+
+            if (funnelStatus === "preslot accept by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Pre-Inspection Slot Accepted",
+                    message: `${ownerName} has accepted the pre-inspection slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Pre-Inspection Slot Accepted", `${ownerName} has accepted the pre-inspection slot`);
+                const preslotAcceptByOwnerPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: preslotAcceptByOwnerPath, type: "preslotAcceptByOwner" });
+            }
+
+            if (funnelStatus === "home inventory accept by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Home Inventory Accepted",
+                    message: `${buyerName} has accepted the home inventory for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Home Inventory Accepted", `${buyerName} has accepted the home inventory`);
+                const homeInvAcceptPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: homeInvAcceptPath, type: "homeInventoryAcceptByUser" });
+            }
+
+            if (funnelStatus === "home inventory opened by owner") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Home Inventory Available",
+                    message: `${ownerName} has opened the home inventory for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Home Inventory Available", `${ownerName} has opened the home inventory`);
+                const homeInvOpenedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: homeInvOpenedPath, type: "homeInventoryOpenedByOwner" });
+            }
+
+            if (funnelStatus === "request to change the home inventory slot") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Home Inventory Slot Change Request",
+                    message: `${buyerName} has requested to change the home inventory slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Slot Change Request", `${buyerName} has requested to change the home inventory slot`);
+                const homeInvChangePath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: homeInvChangePath, type: "requestToChangeHomeInventorySlot" });
+            }
+
+            // BONUS: lovepreet-specific status
+            if (funnelStatus === "owner changed the home inventory slot") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Home Inventory Slot Changed",
+                    message: `${ownerName} has changed the home inventory slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Home Inventory Slot Changed", `${ownerName} has changed the home inventory slot`);
+                const homeInvChangedByOwnerPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: homeInvChangedByOwnerPath, type: "ownerChangedHomeInventorySlot" });
+            }
+
+            if (funnelStatus === "request to change the final signing slot") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Final Signing Slot Change Requested",
+                    message: `${buyerName} has requested to change the final signing slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Final Signing Slot Change Requested", `${buyerName} has requested to change the final signing slot`);
+                const finalSignChangePath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: finalSignChangePath, type: "requestToChangeFinalSigningSlot" });
+            }
+
+            if (funnelStatus === "request to change the visit slot") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Visit Slot Change Requested",
+                    message: `${buyerName} has requested to change the visit slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Visit Slot Change Requested", `${buyerName} has requested to change the visit slot`);
+                const visitSlotChangePath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: visitSlotChangePath, type: "requestToChangeVisitSlot" });
+            }
+
+            if (funnelStatus === "owner changed the final signing slot") {
+                await db.notifications.create({
+                    sendTo: interest.buyerId._id,
+                    sendBy: findProperty.addedBy._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Final Signing Slot Updated",
+                    message: `${ownerName} has updated the final signing slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(interest.buyerId._id, "Final Signing Slot Updated", `${ownerName} has updated the final signing slot`);
+                const finalSignUpdatedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: finalSignUpdatedPath, type: "ownerChangedFinalSigningSlot" });
+            }
+
+            if (funnelStatus === "saleslot booked by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    title: "Sale Slot Booked",
+                    message: `${buyerName} has booked a sale slot for ${findProperty.propertyTitle}`
+                });
+                await notifyUser(findProperty.addedBy._id, "Sale Slot Booked", `${buyerName} has booked a sale slot`);
+                const saleslotByUserPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-owner?user_id=${findProperty.addedBy._id}`;
+                await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: ownerEmail, propertyLink: saleslotByUserPath, type: "saleslotBookedByUser" });
+            }
+
+            if (funnelStatus === "application submit by user") {
+                await db.notifications.create({
+                    sendTo: findProperty.addedBy._id,
+                    sendBy: interest.buyerId._id,
+                    property_id: propertyId,
+                    status: "unread",
+                    type: "interestStatus",
+                    title: "Documents Shared",
+                    message: `${buyerName} has shared his documents for property titled ${findProperty.propertyTitle}.`
+                });
+                await notifyUser(findProperty.addedBy._id, "Documents Shared", `${buyerName} has shared his documents.`);
+                await sendEmail({
+                    module: "AUTH",
+                    to: ownerEmail,
+                    subject: "Documents partagés concernant votre propriété",
+                    templateId: constants.BREVO.OWNER_DOCS_NOTIFY,
+                    params: {
+                        ownerName,
+                        buyerName,
+                        propertyTitle: findProperty.propertyTitle || "",
+                        funnelLink: `${process.env.FRONT_WEB_URL}/funnel`,
+                    },
+                });
             }
 
             const updatePropertyInterestTime = await db.property.updateOne(
@@ -1911,31 +2534,38 @@ module.exports = {
                 funnelStatus: "transferred"
             });
 
-            const recipientEmails = Object.values(emailMapping);
+            const propertyLink = `${process.env.FRONT_WEB_URL}/property-details?id=${findProperty._id}`;
 
-            const offerAcceptedEmailPayload = recipientEmails.map((email) => ({
-                email: email,
-                buyerName: findUser.fullName,
-                price: findExpireBuyers.finalPrice,
-                type: "rentPropertyTransfer",
-                ownerName: findOldOwner.fullName,
-                propertyTitle: findProperty.propertyTitle,
-                propertyLink: `https://book.jcsoftwaresolution.in/property-details?id=${findProperty._id}`
-            }));
-            for (const emailPayload of offerAcceptedEmailPayload) {
-                await Emails.propertyTransferEmail(emailPayload);
+            for (const email of recipientEmails) {
+                await sendEmail({
+                    module: "AUTH",
+                    to: email,
+                    subject: "Confirmation de transfert de propriété",
+                    templateId: constants.BREVO.PROPERTY_TRANSFER_CONFIRMATION,
+                    params: {
+                        transferorName: formatDisplayName(findOldOwner),
+                        transfereeName: formatDisplayName(findUser),
+                        propertyTitle: findProperty.propertyTitle || "",
+                        propertyLink,
+                    },
+                });
                 console.log("case: offer accepted");
-                console.log(emailPayload);
             }
-            const newOwnerPayload = {
-                type: "sellerCase",
-                email: findUser.email,
-                ownerName: findOldOwner.fullName,
-                renterName: findUser.fullName,
-                propertyTitle: findProperty.propertyTitle,
-                propertyLink: `https://book.jcsoftwaresolution.in/property-details?id=${findProperty._id}`,
-            }
-            const sendRenterEmail = await Emails.ownerCongratsEmail(newOwnerPayload)
+            const isRenterCase = false;
+            await sendEmail({
+                module: "AUTH",
+                to: findUser.email,
+                subject: "Confirmation de propriété",
+                templateId: constants.BREVO.OWNER_CONGRATS_EMAIL,
+                params: {
+                    renterName: formatDisplayName(findUser),
+                    ownerName: formatDisplayName(findOldOwner),
+                    propertyTitle: findProperty.propertyTitle || "",
+                    propertyLink,
+                    mainMessage: `Nous sommes ravis de vous informer que vous avez acheté avec succès le bien "${findProperty.propertyTitle}" auprès de ${formatDisplayName(findOldOwner)}.`,
+                    subMessage: `Félicitations pour votre nouvelle propriété !`,
+                },
+            });
 
             const saveHistory = await db.interestTransactions.create({
                 interestId,
@@ -2094,14 +2724,14 @@ module.exports = {
                 _id: buyerId,
                 isDeleted: false
             });
-            let buyerName = findBuyer.firstName;
+            let buyerName = formatDisplayName(findBuyer);
             const findProperty = await db.property.findOne({
                 _id: propertyId,
                 isDeleted: false
             })
                 .populate({
                     path: "addedBy",
-                    select: "fullName"
+                    select: "fullName firstName lastName accountType username companyName"
                 })
 
             let ownerId = findProperty.addedBy;
@@ -2110,7 +2740,7 @@ module.exports = {
             })
             let propertyData = {
                 ...findProperty.toObject(),
-                ownerName: findProperty.addedBy?.fullName
+                ownerName: formatDisplayName(findProperty.addedBy)
             }
 
             const findInterestedUsers = await db.interests.find({
@@ -2235,7 +2865,18 @@ module.exports = {
                         OwnerName: findOwner.fullName
                     }
 
-                    const ownerDocsNotifyEmailSale = await Emails.ownerDocsNotify(emailPayloadSale);
+                    const ownerDocsNotifyEmailSale = await sendEmail({
+                        module: "AUTH",
+                        to: findOwner.email,
+                        subject: "Documents partagés concernant votre propriété",
+                        templateId: constants.BREVO.OWNER_DOCS_NOTIFY,
+                        params: {
+                            ownerName: findOwner.fullName || "",
+                            buyerName: buyerName || "",
+                            propertyTitle: findProperty.propertyTitle || "",
+                            funnelLink: `${process.env.FRONT_WEB_URL}/funnel`,
+                        },
+                    });
                     console.log("Email sent to owner sale case.");
                     break;
 
@@ -2257,7 +2898,18 @@ module.exports = {
                         OwnerName: findOwner.fullName
                     }
 
-                    const ownerDocsNotifyEmailRent = await Emails.ownerDocsNotify(emailPayloadRent);
+                    const ownerDocsNotifyEmailRent = await sendEmail({
+                        module: "AUTH",
+                        to: findOwner.email,
+                        subject: "Documents partagés concernant votre propriété",
+                        templateId: constants.BREVO.OWNER_DOCS_NOTIFY,
+                        params: {
+                            ownerName: findOwner.fullName || "",
+                            buyerName: buyerName || "",
+                            propertyTitle: findProperty.propertyTitle || "",
+                            funnelLink: `${process.env.FRONT_WEB_URL}/funnel`,
+                        },
+                    });
                     console.log("Email sent to owner rent case.");
                     break;
             }
@@ -2412,9 +3064,9 @@ module.exports = {
 
             const renterId = findInterest.buyerId;
             const findRenter = await db.users.findOne({ isDeleted: false, _id: renterId });
-            let renterName = findRenter.fullName;
+            let renterName = formatDisplayName(findRenter);
             const findOwner = await db.users.findOne({ isDeleted: false, _id: findProperty.addedBy })
-            let ownerName = findOwner.fullName;
+            let ownerName = formatDisplayName(findOwner);
 
             const createRentTransaction = await db.propertyTransfers.create({
                 renter: findInterest.buyerId,
@@ -2457,18 +3109,36 @@ module.exports = {
                 type: "renterCase"
             }
 
-            const sendRenterEmail = await Emails.ownerCongratsEmail(renterEmailPayload)
+            await sendEmail({
+                module: "AUTH",
+                to: renterEmail,
+                subject: "Confirmation de location",
+                templateId: constants.BREVO.OWNER_CONGRATS_EMAIL,
+                params: {
+                    renterName: renterName || "",
+                    ownerName: ownerName || "",
+                    propertyTitle: findProperty.propertyTitle || "",
+                    propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${findProperty._id}`,
+                    mainMessage: `Nous sommes ravis de vous informer que vous avez loué avec succès le bien "${findProperty.propertyTitle}" auprès de ${ownerName}.`,
+                    subMessage: `Merci de votre confiance envers Bookaroo.`,
+                },
+            });
 
             if (recipientEmails.length > 0) {
                 const emailPromises = recipientEmails.map(async (email) => {
                     try {
-                        await Emails.renterTransferEmail({
-                            email: email,
-                            propertyTitle: findProperty.propertyTitle,
-                            propertyType: propertyType,
-                            ownerName: ownerName,
-                            renterName: renterName,
-                            propertyLink: `https://book.jcsoftwaresolution.in/property-details?id=${findProperty._id}`
+                        await sendEmail({
+                            module: "AUTH",
+                            to: email,
+                            subject: "Transfert de locataire pour votre propriété",
+                            templateId: constants.BREVO.RENTER_TRANSFER_NOTIFICATION,
+                            params: {
+                                propertyTitle: findProperty.propertyTitle || "",
+                                propertyType: propertyType || "",
+                                ownerName: ownerName || "",
+                                renterName: renterName || "",
+                                propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${findProperty._id}`,
+                            }
                         });
                         console.log("Email sent to:", email);
                     } catch (emailError) {
@@ -2575,12 +3245,18 @@ module.exports = {
             })
 
 
-            let sendEmail = await Emails.notifyOwner({
-                email: findOwner.email,
-                buyerName: findBuyer.fullName,
-                propertyTitle: findProperty.propertyTitle,
-                ownerName: findOwner.fullName
-            })
+            let sendEmailResult = await sendEmail({
+                module: "AUTH",
+                to: findOwner.email,
+                subject: "Demande de transfert de propriété",
+                templateId: constants.BREVO.PROPERTY_TRANSFER_REQUEST,
+                params: {
+                    ownerName: findOwner.fullName || "",
+                    buyerName: formatDisplayName(findBuyer),
+                    propertyTitle: findProperty.propertyTitle || "",
+                    dashboardUrl: `${process.env.FRONT_WEB_URL}/dashboard`,
+                }
+            });
 
             const createPropertyTransferNotification = await db.notifications.create({
                 sendTo: findProperty.addedBy,

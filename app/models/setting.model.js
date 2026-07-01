@@ -15,6 +15,7 @@ module.exports = (mongoose) => {
       new_blog_post: { type: Object },
       new_feature_release: { type: Object },
       send_notification: { type: String },
+      weeklyDigest: { type: Object, default: null },
       status: { type: String, default: "active" },
       isDeleted: { type: Boolean, default: false, index: true },
       createdAt: { type: Date, default: Date.now },

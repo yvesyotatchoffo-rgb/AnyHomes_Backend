@@ -9,6 +9,10 @@
 const stripeService = require('../services/stripeMarketplaceService');
 const ServiceOrderEn = require('../models/ServiceOrder_en.model');
 const ServiceOrderFr = require('../models/ServiceOrder_fr.model');
+const db = require('../../../models');
+const { sendEmail } = require('../../../config/brevo.config');
+const constants = require('../../../utls/constants');
+const { formatDisplayName } = require('../../../utls/formatDisplayName');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +53,26 @@ module.exports = async (req, res) => {
           order.paidAt = new Date();
           await order.save();
           console.log(`[StripeWebhook] Commande ${order._id} → paid (PaymentIntent authorized)`);
+          // Email de confirmation commande payée → acheteur
+          try {
+            const buyerUser = await db.users.findById(order.buyer).select('email fullName firstName lastName username accountType').lean();
+            if (buyerUser?.email) {
+              await sendEmail({
+                to: [{ email: buyerUser.email, name: buyerUser.fullName || buyerUser.firstName || '' }],
+                templateId: constants.BREVO.SERVICE_ORDER_CONFIRMATION,
+                params: {
+                  buyerName: formatDisplayName(buyerUser),
+                  serviceTitle: order.serviceSnapshot?.title || order.serviceSnapshot?.title_fr || '',
+                  quantity: order.quantity,
+                  totalPriceTTC: order.totalPriceTTC,
+                  proName: formatDisplayName(order.proSnapshot),
+                  orderId: String(order._id),
+                },
+              });
+            }
+          } catch (emailErr) {
+            console.error('[Email] SERVICE_ORDER_CONFIRMATION (webhook):', emailErr.message);
+          }
         }
         break;
       }

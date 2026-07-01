@@ -1,6 +1,7 @@
 const db = require("../models");
 const constants = require("../utls/constants");
 const Emails = require("../Emails/onBoarding");
+const { sendEmail } = require("../config/brevo.config");
 var mongoose = require("mongoose");
 const fcm_service = require("../services/FcmServices");
 
@@ -25,8 +26,19 @@ module.exports = {
                     userName: req.body.firstName,
                     useremail: req.body.email
                 }
-                await Emails.contactUsEmail(email_payload);
-
+                await sendEmail({
+                    module: "AUTH",
+                    to: findUser.email,
+                    subject: "Nouvelle demande de contact sur AnyHomes",
+                    templateId: constants.BREVO.CONTACT_US_NOTIFICATION,
+                    params: {
+                        fullName: findUser.fullName,
+                        userName: req.body.firstName,
+                        useremail: req.body.email,
+                        appName: "AnyHomes",
+                        logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
+                    }
+                });
             }
 
             const currUser = db.users.findOne({ _id: req.identity.id });

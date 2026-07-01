@@ -26,6 +26,7 @@ db.notifications = require("./notifications.model.js")(mongoose);
 db.revenue = require("./revenueManagement.js")(mongoose);
 db.folder = require("./folder.model.js")(mongoose);
 db.contactUs = require("./contactUs.model.js")(mongoose);
+db.userRequest = require("./userRequest.model.js")(mongoose);
 db.services = require("./services.model.js")(mongoose);
 db.devices = require("./device.model.js")(mongoose);
 db.setting = require("./setting.model.js")(mongoose);
@@ -79,5 +80,6 @@ db.dashboardPreferences = require("./dashboardPreferences.model.js")(mongoose)
 db.activityLog = require("./activityLog.model.js")(mongoose)
 db.propertyActivityLog = require("./propertyActivityLog.model.js")(mongoose)
 db.persona = require("./persona.model.js")(mongoose)
+db.referralInvitations = require("./referralInvitation.model.js")(mongoose)
 
 module.exports = db;
