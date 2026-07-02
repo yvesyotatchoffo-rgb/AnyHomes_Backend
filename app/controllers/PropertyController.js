@@ -575,6 +575,10 @@ module.exports = {
       }
       data.companyName = findOwner.companyName;
       data.ownerId = findOwner._id;
+      data.ownerImage = findOwner.image || null;
+      data.ownerFirstName = findOwner.firstName || null;
+      data.ownerLastName = findOwner.lastName || null;
+      data.ownerFullName = findOwner.fullName || null;
       data.isInterested = isInterested;
       data.totalInquries = findInqiries;
 

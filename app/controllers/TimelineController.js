@@ -120,10 +120,34 @@ module.exports = {
                 .limit(Number(count));
             const totalItems = await Timeline.countDocuments(query);
 
+            // Always ensure a propertyCreated entry appears first on page 1
+            let result = timelines;
+            if (propertyId && Number(page) === 1) {
+                const hasCreated = timelines.some(t => t.type === "propertyCreated");
+                if (!hasCreated) {
+                    const prop = await Property.findOne({ _id: propertyId }, 'createdAt addedBy').lean();
+                    if (prop) {
+                        result = [
+                            {
+                                id: `synthetic-created-${propertyId}`,
+                                type: "propertyCreated",
+                                propertyId,
+                                addedBy: prop.addedBy,
+                                createdAt: prop.createdAt,
+                                updatedAt: prop.createdAt,
+                                like: false,
+                                likeCount: 0,
+                            },
+                            ...timelines,
+                        ];
+                    }
+                }
+            }
+
             return res.status(200).json({
                 success: true,
                 data: {
-                    timelines,
+                    timelines: result,
                     pagination: {
                         totalItems,
                         // currentPage: Number(page),
