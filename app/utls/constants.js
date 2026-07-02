@@ -353,5 +353,7 @@ module.exports = {
     LITIGATION_OPENED: 130,
     // Referral invitation sent by email (in-app modal)
     REFERRAL_EMAIL_INVITE: 131,
+    // Confirmation de signalement de profil/bien envoyée au signalant
+    PROPERTY_REPORT_CONFIRMATION: 132,
   }
 };

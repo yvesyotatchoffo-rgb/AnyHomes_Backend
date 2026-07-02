@@ -66,6 +66,8 @@ router.use("/persona", require("./persona.routes"));
 router.use("/trainingTopic", require("./trainingTopic.routes"));
 router.use("/user-requests", require("./userRequest.routes"));
 router.use("/renovation-quote-requests", require("./renovationQuoteRequest.routes"));
+router.use("/property-report", require("./propertyReport.routes"));
+router.use("/pro-request", require("./proRequest.routes"));
 router.use("/admin/property-attractivity", require("./admin-property-attractivity.routes"));
 router.use("/admin/campaigns", require("./admin-campaigns.routes"));
 

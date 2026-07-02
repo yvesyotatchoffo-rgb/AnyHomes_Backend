@@ -82,5 +82,7 @@ db.activityLog = require("./activityLog.model.js")(mongoose)
 db.propertyActivityLog = require("./propertyActivityLog.model.js")(mongoose)
 db.persona = require("./persona.model.js")(mongoose)
 db.referralInvitations = require("./referralInvitation.model.js")(mongoose)
+db.propertyReport = require("./propertyReport.model.js")(mongoose)
+db.proRequest = require("./proRequest.model.js")(mongoose)
 
 module.exports = db;

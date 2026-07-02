@@ -575,7 +575,7 @@ module.exports = {
       }
       data.companyName = findOwner.companyName;
       data.ownerId = findOwner._id;
-      data.ownerImage = findOwner.image || null;
+      data.ownerImage = findOwner.image || findOwner.companyLogo || findOwner.featuredProfilePhoto || propertyDetail._doc.addedBy?.image || null;
       data.ownerFirstName = findOwner.firstName || null;
       data.ownerLastName = findOwner.lastName || null;
       data.ownerFullName = findOwner.fullName || null;
