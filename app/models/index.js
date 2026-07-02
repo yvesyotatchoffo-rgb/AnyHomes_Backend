@@ -27,6 +27,7 @@ db.revenue = require("./revenueManagement.js")(mongoose);
 db.folder = require("./folder.model.js")(mongoose);
 db.contactUs = require("./contactUs.model.js")(mongoose);
 db.userRequest = require("./userRequest.model.js")(mongoose);
+db.renovationQuoteRequest = require("./renovationQuoteRequest.model.js")(mongoose);
 db.services = require("./services.model.js")(mongoose);
 db.devices = require("./device.model.js")(mongoose);
 db.setting = require("./setting.model.js")(mongoose);
