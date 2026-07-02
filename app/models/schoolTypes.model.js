@@ -5,6 +5,7 @@ module.exports = (mongoose) => {
   var schema = mongoose.Schema(
     {
       name: { type: String, required: true, unique: true, trim: true },
+      slug: { type: String, trim: true },
       isDeleted: { type: Boolean, default: false },
     },
     { timestamps: true }

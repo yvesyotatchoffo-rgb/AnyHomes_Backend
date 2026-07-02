@@ -73,14 +73,27 @@ module.exports = {
       if (schoolStatus) {
         query.schoolStatus = schoolStatus;
       }
-      // if (schoolType) {
-        // query.schoolType = schoolType;
-      // }
       if (schoolType) {
         const schoolTypesArray = Array.isArray(schoolType)
           ? schoolType
           : schoolType.split(',');
-        query.schoolType = { $in: schoolTypesArray };
+
+        const isObjectId = (v) => /^[0-9a-f]{24}$/i.test(v);
+
+        if (schoolTypesArray.every(isObjectId)) {
+          // Admin panel sends ObjectIds directly
+          query.schoolType = { $in: schoolTypesArray };
+        } else {
+          // Frontend sends English slugs — resolve to ObjectIds via schooltypes
+          const resolvedTypes = await db.schoolTypes.find({
+            slug: { $in: schoolTypesArray },
+            isDeleted: false,
+          }).lean();
+          const typeIds = resolvedTypes.map((t) => t._id.toString());
+          query.schoolType = typeIds.length > 0
+            ? { $in: typeIds }
+            : { $in: ['__no_match__'] };
+        }
       }
       if (establishmentType) {
         query.establishmentType = establishmentType;
