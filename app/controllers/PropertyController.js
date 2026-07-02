@@ -577,6 +577,25 @@ module.exports = {
       data.ownerId = findOwner._id;
       data.isInterested = isInterested;
       data.totalInquries = findInqiries;
+
+      // Sollicitations composite metric
+      const [solicitSoftOffers, solicitFormalOffers, solicitMessages, solicitPhoneReveals, solicitVisits] = await Promise.all([
+        db.interests.countDocuments({ propertyId: propertyDetail._id, isDeleted: false, interestType: "interest sent" }),
+        db.interests.countDocuments({ propertyId: propertyDetail._id, isDeleted: false, interestType: "offer sent" }),
+        db.messages.countDocuments({ property_id: propertyDetail._id, isDeleted: false }),
+        db.propertyActivityLog.countDocuments({ propertyId: propertyDetail._id, type: "profile_view", phoneRevealed: true }),
+        db.propertyActivityLog.countDocuments({ propertyId: propertyDetail._id, type: "visit_request" }),
+      ]);
+      data.solicitations = {
+        total: solicitSoftOffers + solicitFormalOffers + solicitMessages + solicitPhoneReveals + solicitVisits,
+        interests: solicitSoftOffers + solicitFormalOffers,
+        softOffers: solicitSoftOffers,
+        formalOffers: solicitFormalOffers,
+        messages: solicitMessages,
+        phoneReveals: solicitPhoneReveals,
+        bookedVisits: solicitVisits,
+      };
+
       return res.status(200).json({
         success: true,
         data: data,
