@@ -3728,23 +3728,9 @@ module.exports = {
           },
         });
       }
-      const randomSuffix = Math.floor(Math.random() * 100000);
-      let username = req.body.firstName[0].toUpperCase() + req.body.lastName[0].toUpperCase() + randomSuffix;
-      let isUsernameUnique = false;
-
-      while (!isUsernameUnique) {
-        var usernameCheckQuery = { isDeleted: false, username: username };
-        const existingUsername = await Users.findOne(usernameCheckQuery);
-
-        if (!existingUsername) {
-          isUsernameUnique = true;
-        } else {
-          const randomSuffix = Math.floor(Math.random() * 1000);
-          username = username + randomSuffix;
-        }
-      }
-
-      data.username = username;
+      const _firstName = req.body.firstName || "";
+      const _lastName = req.body.lastName || "";
+      data.username = `${_firstName} ${_lastName.charAt(0).toUpperCase()}.`.trim();
 
       const createdUser = await Users.create(data);
 

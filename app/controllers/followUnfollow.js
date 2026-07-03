@@ -70,6 +70,36 @@ module.exports = {
     }
   },
 
+  listPropertyFollowers: async (req, res) => {
+    try {
+      const { propertyId } = req.query;
+      if (!propertyId) {
+        return res.status(400).json({ success: false, message: 'propertyId required' });
+      }
+
+      const records = await db.followUnfollow
+        .find({ property_id: propertyId, follow_unfollow: true, isDeleted: false })
+        .sort({ createdAt: -1 })
+        .populate('user_id', 'fullName firstName lastName image username')
+        .lean();
+
+      const data = records
+        .filter((r) => r.user_id)
+        .map((r) => ({
+          followId: r._id,
+          userId: r.user_id._id,
+          fullName: r.user_id.fullName || `${r.user_id.firstName || ''} ${r.user_id.lastName || ''}`.trim(),
+          username: r.user_id.username || r.user_id.fullName,
+          avatar: r.user_id.image || null,
+          followedAt: r.createdAt,
+        }));
+
+      return res.status(200).json({ success: true, data });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: '' + error });
+    }
+  },
+
   addfollowUnfollow: async (req, res) => {
     try {
       let data = req.body;

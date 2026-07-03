@@ -93,6 +93,30 @@ const stripe = require("stripe")(process.env.STRIPE_KEY);
 
 
 module.exports = {
+    list: async (req, res) => {
+        try {
+            const { userId } = req.query;
+            if (!userId) {
+                return res.status(400).json({ success: false, message: "userId manquant." });
+            }
+            const subscriptions = await db.subscription
+                .find({ userId, isDeleted: false })
+                .populate({ path: "planId", select: "name planType pricing role description" })
+                .sort({ createdAt: -1 });
+
+            // Active subscription = first non-cancelled, non-deleted
+            const active = subscriptions.find((s) => s.status === "active" || s.status === "trialing") || null;
+
+            return res.status(200).json({
+                success: true,
+                data: subscriptions,
+                active,
+            });
+        } catch (err) {
+            return res.status(400).json({ success: false, message: err.message });
+        }
+    },
+
     // add: async (req, res) => {
     //     try{
 

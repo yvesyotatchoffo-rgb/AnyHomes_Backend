@@ -33,7 +33,7 @@ module.exports = {
       // ── 1. Données de base de l'utilisateur ─────────────────────────────────
       const user = await db.users
         .findOne({ _id: oid, isDeleted: false })
-        .populate("planId", "name amount duration")
+        .populate("planId", "name planType offMarket numberOfProperty pricing amount duration")
         .lean();
 
       if (!user) {

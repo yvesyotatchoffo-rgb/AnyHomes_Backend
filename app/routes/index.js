@@ -70,6 +70,7 @@ router.use("/property-report", require("./propertyReport.routes"));
 router.use("/pro-request", require("./proRequest.routes"));
 router.use("/admin/property-attractivity", require("./admin-property-attractivity.routes"));
 router.use("/admin/campaigns", require("./admin-campaigns.routes"));
+router.use("/admin/bizdev-leads", require("./bizdevLeads.routes"));
 
 // ── Marketplace de services ────────────────────────────────────────────────
 router.use("/marketplace", require("../modules/services-marketplace/routes/public"));

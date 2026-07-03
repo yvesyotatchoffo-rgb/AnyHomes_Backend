@@ -2,7 +2,7 @@ const db = require("../models");
 const constants = require("../utls/constants");
 var mongoose = require("mongoose");
 const { ObjectId } = require("mongoose").Types;
-const stripe = require("stripe")(process.env.STRIPE_KEY);
+const stripe = process.env.STRIPE_KEY ? require("stripe")(process.env.STRIPE_KEY) : null;
 
 module.exports = {
   /**
@@ -48,30 +48,26 @@ module.exports = {
         body.createdAt = new Date();
         body.updatedAt = new Date();
         let pricing = body.pricing;
-        const product = await stripe.products.create({
-          name: body.name,
-          // metadata: {
-          //   days: body.days
-          // }
-        });
-        // console.log(product, "----------pricing");
-
-        body.stripe_product_id = product.id;
-        if (pricing) {
-          for await (const itm of pricing) {
-            const pricing = await stripe.prices.create({
-              product: product.id,
-              unit_amount:Number(itm.unit_amount) * 100,
-              currency: itm.currency,
-              recurring: {
-                interval: itm.interval ? itm.interval : "month",
-                interval_count: itm.interval_count ? itm.interval_count : 1,
-              },
-            });
-            itm.stripe_price_id = pricing.id;
+        if (stripe) {
+          const product = await stripe.products.create({
+            name: body.name,
+          });
+          body.stripe_product_id = product.id;
+          if (pricing) {
+            for await (const itm of pricing) {
+              const stripePrice = await stripe.prices.create({
+                product: product.id,
+                unit_amount: Number(itm.unit_amount) * 100,
+                currency: itm.currency,
+                recurring: {
+                  interval: itm.interval ? itm.interval : "month",
+                  interval_count: itm.interval_count ? itm.interval_count : 1,
+                },
+              });
+              itm.stripe_price_id = stripePrice.id;
+            }
           }
         }
-        // console.log(pricing, "0-------------------------------------");
         body.pricing = pricing;
         const planAdded = await db.plans.create(body);
         return res.status(200).json({
@@ -266,6 +262,10 @@ module.exports = {
       }
       delete body.id;
       delete body.pricing;
+      // Sync offMarket boolean from otherDetails.accessToOffMarketProps
+      if (body.otherDetails?.accessToOffMarketProps?.key !== undefined) {
+        body.offMarket = body.otherDetails.accessToOffMarketProps.key !== 'not_available';
+      }
       let updated = await db.plans.updateOne({ _id: id }, { $set: body });
       if (updated.matchedCount === 0) {
         return res.status(404).json({

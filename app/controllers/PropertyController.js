@@ -62,6 +62,41 @@ const parseObjectId = (value) => {
     : null;
 };
 
+/**
+ * Determines the off-market access level for a given property and viewer.
+ * Returns: 'accessible' | 'blurred_no_account' | 'blurred_no_project' | 'hidden'
+ */
+async function getOffMarketAccessLevel(property, loggedInUserId, userData) {
+  if (!loggedInUserId || !userData) return 'blurred_no_account';
+  const role = userData.role;
+  if (role === 'admin' || role === 'staff') return 'accessible';
+  // Owner always sees their own listing
+  const ownerId = String(property.addedBy?._id || property.addedBy || '');
+  if (ownerId && ownerId === String(userData._id)) return 'accessible';
+  const isRent = String(property.propertyType || '').toLowerCase() === 'rent';
+  const hasProject = isRent ? !!userData.renterFilesAddedAt : !!userData.buyerFilesAddedAt;
+  if (!hasProject) return 'blurred_no_project';
+  const threshold = Number(property.chooseDocumentMinProbability ?? 0);
+  let scoreResult;
+  try {
+    if (isRent) {
+      scoreResult = await scoreService.computeRenterScore({
+        declarativeRenterFiles: userData.declarativeRenterFiles || {},
+        property,
+      });
+    } else {
+      scoreResult = await scoreService.computeFinancialScore({
+        declarativeBuyerFiles: userData.declarativeBuyerFiles || {},
+        property,
+      });
+    }
+  } catch (_e) {
+    return 'blurred_no_project'; // fallback on compute error
+  }
+  const score = Number(scoreResult?.score ?? 0);
+  return score >= threshold ? 'accessible' : 'hidden';
+}
+
 function filterByPrice(priceRange) {
   if (priceRange) {
     // Split price range into start and end prices
@@ -504,6 +539,30 @@ module.exports = {
           message: "Property not found.",
         });
       }
+
+      // ─── Off-Market access control (detail page) ─────────────────────────
+      if (propertyDetail.offMarket) {
+        const viewerData = isRealUser
+          ? await db.users.findOne({ _id: userId, isDeleted: false })
+              .select('role _id declarativeBuyerFiles declarativeRenterFiles buyerFilesAddedAt renterFilesAddedAt')
+              .lean()
+          : null;
+        const accessLevel = await getOffMarketAccessLevel(propertyDetail, userId, viewerData);
+        if (accessLevel !== 'accessible') {
+          const messages = {
+            blurred_no_account: 'Ce bien Off-Market est réservé aux utilisateurs connectés.',
+            blurred_no_project: 'Veuillez compléter votre formulaire « Votre projet » pour accéder aux biens Off-Market.',
+            hidden: "Votre indice de fiabilité acquéreur / confiance locative est insuffisant pour accéder à ce bien Off-Market.",
+          };
+          return res.status(403).json({
+            success: false,
+            offMarketBlocked: true,
+            reason: accessLevel,
+            message: messages[accessLevel] || 'Accès refusé.',
+          });
+        }
+      }
+
       let findOwner = await db.users.findOne({
         _id: propertyDetail.addedBy,
         isDeleted: false
@@ -584,11 +643,11 @@ module.exports = {
 
       // Sollicitations composite metric
       const [solicitSoftOffers, solicitFormalOffers, solicitMessages, solicitPhoneReveals, solicitVisits] = await Promise.all([
-        db.interests.countDocuments({ propertyId: propertyDetail._id, isDeleted: false, interestType: "interest sent" }),
-        db.interests.countDocuments({ propertyId: propertyDetail._id, isDeleted: false, interestType: "offer sent" }),
-        db.messages.countDocuments({ property_id: propertyDetail._id, isDeleted: false }),
-        db.propertyActivityLog.countDocuments({ propertyId: propertyDetail._id, type: "profile_view", phoneRevealed: true }),
-        db.propertyActivityLog.countDocuments({ propertyId: propertyDetail._id, type: "visit_request" }),
+        db.interests.countDocuments({ propertyId: id, isDeleted: false, interestType: "interest sent" }),
+        db.interests.countDocuments({ propertyId: id, isDeleted: false, interestType: "offer sent" }),
+        db.messages.countDocuments({ property_id: id, isDeleted: false }),
+        db.propertyActivityLog.countDocuments({ propertyId: id, type: "profile_view", phoneRevealed: true }),
+        db.propertyActivityLog.countDocuments({ propertyId: id, type: "visit_request" }),
       ]);
       data.solicitations = {
         total: solicitSoftOffers + solicitFormalOffers + solicitMessages + solicitPhoneReveals + solicitVisits,
@@ -940,9 +999,11 @@ module.exports = {
         query.proposal = proposal;
       }
 
-      if (offMarket != null) {
-        query.offMarket = offMarket === "true";
+      if (offMarket === "true") {
+        // Toggle ON: show only Off-Market properties
+        query.offMarket = true;
       }
+      // Toggle OFF or absent: no filter → show all properties (normal + off-market)
       ///
       let loggedInUserData;
       let financingProbabilityMatch = {};
@@ -1361,6 +1422,7 @@ module.exports = {
               ],
             },
             linkedSchools: 1,
+            propertyViewerCount: 1,
           },
         },
       ];
@@ -1727,9 +1789,12 @@ module.exports = {
           createdAt: 1,
           addedBy: 1,
           propertyType: 1,
+          proposal: 1,
           location: 1,
           exactLocation: 1,
           randomLocation: 1,
+          offMarket: 1,
+          propertyViewerCount: 1,
         };
 
         const total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
@@ -1749,11 +1814,17 @@ module.exports = {
           addedBy: d.addedBy?._id || d.addedBy,
         }));
 
+        // Fast-path: no logged-in user → tag all off-market as blurred_no_account
+        const processedDocs = docsWithOwner.map(d => {
+          if (!d.offMarket) return d;
+          return { offMarket: true, offMarketAccessLevel: 'blurred_no_account', propertyType: d.propertyType };
+        });
+
         return res.status(200).json({
           success: true,
           message: constants.PROPERTY.RETRIEVED,
           total,
-          data: docsWithOwner,
+          data: processedDocs,
         });
       }
 
@@ -1824,6 +1895,29 @@ module.exports = {
         }
         result = await Property.aggregate([...pipeline]);
       }
+      // ─── Off-Market access level post-processing ────────────────────────
+      // accessible     → full data, card shown normally
+      // blurred_*      → minimal placeholder, card blurred
+      // hidden         → removed from results, total adjusted
+      if (result && result.some(p => p.offMarket)) {
+        const processed = [];
+        let hiddenCount = 0;
+        for (const property of result) {
+          if (!property.offMarket) { processed.push(property); continue; }
+          const accessLevel = await getOffMarketAccessLevel(property, loggedInUser, loggedInUserData);
+          if (accessLevel === 'hidden') {
+            hiddenCount++;
+          } else if (accessLevel === 'accessible') {
+            processed.push({ ...property, offMarketAccessLevel: 'accessible' });
+          } else {
+            // Blurred: return only minimal data – no ID, no address, no price
+            processed.push({ offMarket: true, offMarketAccessLevel: accessLevel, propertyType: property.propertyType });
+          }
+        }
+        result = processed;
+        if (hiddenCount > 0) total = Math.max(0, total - hiddenCount);
+      }
+
       return res.status(200).json({
         success: true,
         message: constants.PROPERTY.RETRIEVED,
