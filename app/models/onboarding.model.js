@@ -7,6 +7,7 @@ module.exports = (mongooseInstance) => {
     profile: { type: String, enum: ['owner','searcher','buyer','professional'], default: 'owner' },
     objective: { type: String, default: 'sell' },
     completions: { type: Object, default: {} },
+    configuredAt: { type: Date, default: null },
   }, { timestamps: true });
 
   schema.method('toJSON', function() {

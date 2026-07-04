@@ -211,9 +211,11 @@ module.exports = {
       const { profile, objective } = req.body;
       if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
-      const update = { profile, objective };
-      const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
       const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      const existing = await Onboarding.findOne({ userId: uid }).lean();
+      const setConfiguredAt = !existing || !existing.configuredAt;
+      const update = { $set: { profile, objective, ...(setConfiguredAt ? { configuredAt: new Date() } : {}) } };
+      const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
       await Onboarding.findOneAndUpdate({ userId: uid }, update, opts);
       return res.status(200).json({ success: true });
     } catch (err) {
