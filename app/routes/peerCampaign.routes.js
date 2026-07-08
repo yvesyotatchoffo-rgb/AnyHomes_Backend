@@ -6,6 +6,8 @@ router.post("/start/campagin", peerCampaign.startNewCampign);
 
 router.post("/submit/estimation", peerCampaign.submitPropertyEstimation);
 
+router.get("/hasEstimated", peerCampaign.hasEstimated);
+
 router.get("/userCampaigns", peerCampaign.listUserCampaigns);
 
 router.get("/detail/campaign", peerCampaign.getCampaignDetail);

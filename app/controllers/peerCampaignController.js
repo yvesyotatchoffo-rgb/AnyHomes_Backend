@@ -239,6 +239,18 @@ module.exports = {
     }
   },
 
+  hasEstimated: async (req, res) => {
+    try {
+      const { propertyId } = req.query;
+      const userId = req.identity.id;
+      if (!propertyId) return res.status(400).json({ success: false, message: "propertyId required" });
+      const found = await db.peerEstimation.findOne({ propertyId, userId });
+      return res.status(200).json({ success: true, alreadyEstimated: !!found });
+    } catch (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+  },
+
   listUserCampaigns: async (req, res) => {
     try {
       let { status, propertyId, userId, search } = req.query;

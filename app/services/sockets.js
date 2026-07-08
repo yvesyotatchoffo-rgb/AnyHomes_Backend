@@ -1189,6 +1189,17 @@ exports.initializeSocket = function (startServer) {
           matchStage.zipcode = { $in: zipList.map(z => z.trim()) };
         }
 
+        // Exclude user's own properties
+        matchStage.addedBy = { $ne: new mongoose.Types.ObjectId(loggedInUser) };
+
+        // Exclude properties already estimated by this user
+        const alreadyEstimatedIds = await db.peerEstimation.distinct('propertyId', {
+          userId: new mongoose.Types.ObjectId(loggedInUser)
+        });
+        if (alreadyEstimatedIds.length > 0) {
+          matchStage._id = { $nin: alreadyEstimatedIds };
+        }
+
         let filters = {
           isDeleted: false
         }

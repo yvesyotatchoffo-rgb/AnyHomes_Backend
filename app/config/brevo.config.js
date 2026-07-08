@@ -16,6 +16,10 @@ const SENDERS = {
     email: process.env.BREVO_PAYMENT_FROM_EMAIL,
     name: process.env.BREVO_PAYMENT_FROM_NAME,
   },
+  COACH: {
+    email: process.env.BREVO_COACH_FROM_EMAIL || process.env.BREVO_AUTH_FROM_EMAIL,
+    name: process.env.BREVO_COACH_FROM_NAME || "Alfred - Coach Immobilier IA",
+  },
 };
 
 // 📌 Normalize recipients

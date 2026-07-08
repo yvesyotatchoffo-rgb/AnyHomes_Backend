@@ -264,6 +264,7 @@ module.exports = {
         owner_contacted:               ['contact_owner_agency'],
         financial_score_calculated:    ['compute_financial_score_buy', 'compute_financial_score_rent', 'compute_financial_score_passive'],
         service_searched:               ['get_targeted_help'],
+        coach_interacted:               ['get_personalized_advice'],
       };
 
       const toComplete = EVENT_TO_ACTIONS[eventType] || [];

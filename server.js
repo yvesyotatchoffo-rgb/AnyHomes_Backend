@@ -190,12 +190,40 @@ resetDailyMessageLimit();
 checkAndSendSubscriptionReminders();
 monthlyCampaignLimit();
 startWeeklyDigestCron();
+
+// ── Coach IA WebSocket Handler (Phase 2) ────
+let coachWebSocketHandler = null;
+try {
+  if (process.env.COACH_WEBSOCKET_ENABLED !== 'false') {
+    const CoachWebSocketHandler = require('./app/websocket/coach.websocket');
+    coachWebSocketHandler = new CoachWebSocketHandler(null, {
+      jwtSecret: process.env.JWT_SECRET || 'default-secret-change-in-prod',
+    });
+    console.log('Coach WebSocket handler prepared (will be initialized after HTTP server)');
+  }
+} catch (e) {
+  console.warn('Coach WebSocket handler failed to prepare:', e.message);
+}
+
 // set port, listen for requests
 const PORT = process.env.PORT || 6089;
 
 let startServer = http.createServer(app);
+
+// Initialize Coach WebSocket after HTTP server is created
+if (coachWebSocketHandler) {
+  coachWebSocketHandler.server = startServer;
+  coachWebSocketHandler.setupHandlers();
+  coachWebSocketHandler.startHeartbeat();
+  console.log('Coach WebSocket handler initialized on /coach/ws');
+}
+
 socketService.initializeSocket(startServer)
 startServer.listen(PORT, function () {
   console.log(`Server is running on port ${PORT}.`);
 });
+
+// Make coach WebSocket handler available globally for broadcast calls
+global.coachWebSocketHandler = coachWebSocketHandler;
+
 module.exports = app;

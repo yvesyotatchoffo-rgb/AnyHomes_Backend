@@ -3981,28 +3981,81 @@ module.exports = {
         status: "active"
       })
 
+      const frontUrl = process.env.FRONT_WEB_URL || 'http://localhost:8089';
+      console.log("DEBUG FRONT_WEB_URL:", process.env.FRONT_WEB_URL, "→ frontUrl:", frontUrl);
+      const estimationUrl = `${frontUrl}/estimation?propertyId=${propertyId}`;
+      const propertyTitle = findProperty.propertyTitle || "";
+      const city = findProperty.city || "";
+      const zipcode = findProperty.zipcode || "";
+      const rooms = findProperty.rooms || "";
+      const surface = findProperty.surface || "";
+      const price = findProperty.price ? `${Number(findProperty.price).toLocaleString("fr-FR")} €` : "";
+      const propType = findProperty.type
+        ? { apartment: "Appartement", house: "Maison", castle: "Château", farm: "Ferme", building: "Immeuble" }[findProperty.type] || findProperty.type
+        : "";
+      const isRent = findProperty.propertyType === "rent";
+
+      const buildEstimationEmail = (recipientExists) => {
+        const ctaLabel = recipientExists ? "Donner mon estimation →" : "Créer mon compte et estimer →";
+        return `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Estimation immobilière - Bookaroo</title></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 20px">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+  <tr><td style="background:linear-gradient(135deg,#976DD0,#7b52b8);padding:28px 32px;text-align:center">
+    <p style="color:#fff;margin:0 0 4px;font-size:13px;letter-spacing:1px;text-transform:uppercase;opacity:0.85">Estimation participative</p>
+    <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700">🏠 Bookaroo</h1>
+  </td></tr>
+  <tr><td style="padding:32px 36px">
+    <h2 style="color:#333;font-size:19px;margin:0 0 12px;font-weight:700">${senderName} vous invite à estimer un bien !</h2>
+    <p style="color:#555;font-size:15px;line-height:1.7;margin:0 0 24px">
+      Votre avis compte. Participez à l'estimation participative de ce bien immobilier et aidez à obtenir une évaluation juste du marché.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f5fe;border-radius:10px;border-left:4px solid #976DD0;margin-bottom:28px">
+      <tr><td style="padding:20px 24px">
+        <p style="color:#976DD0;margin:0 0 14px;font-size:15px;font-weight:700">Caractéristiques du bien</p>
+        <table width="100%" cellpadding="5" cellspacing="0">
+          ${propertyTitle ? `<tr><td style="color:#888;font-size:13px;width:50%">🏷 Titre</td><td style="color:#333;font-weight:600;font-size:13px">${propertyTitle}</td></tr>` : ""}
+          ${city ? `<tr><td style="color:#888;font-size:13px">📍 Localisation</td><td style="color:#333;font-weight:600;font-size:13px">${city}${zipcode ? ` (${zipcode})` : ""}</td></tr>` : ""}
+          ${propType ? `<tr><td style="color:#888;font-size:13px">🏠 Type</td><td style="color:#333;font-weight:600;font-size:13px">${propType}</td></tr>` : ""}
+          ${rooms ? `<tr><td style="color:#888;font-size:13px">🛏 Pièces</td><td style="color:#333;font-weight:600;font-size:13px">${rooms} pièce${rooms > 1 ? "s" : ""}</td></tr>` : ""}
+          ${surface ? `<tr><td style="color:#888;font-size:13px">📐 Surface</td><td style="color:#333;font-weight:600;font-size:13px">${surface} m²</td></tr>` : ""}
+          ${price ? `<tr><td style="color:#888;font-size:13px">${isRent ? "💰 Loyer" : "💰 Prix demandé"}</td><td style="color:#333;font-weight:600;font-size:13px">${price}${isRent ? "/mois" : ""}</td></tr>` : ""}
+        </table>
+      </td></tr>
+    </table>
+    <div style="text-align:center">
+      <a href="${estimationUrl}" style="display:inline-block;background:#976DD0;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:16px;font-weight:700;letter-spacing:0.3px">${ctaLabel}</a>
+    </div>
+    <p style="color:#aaa;font-size:12px;text-align:center;margin:20px 0 0">
+      Ou copiez ce lien dans votre navigateur :<br>
+      <span style="color:#976DD0;word-break:break-all">${estimationUrl}</span>
+    </p>
+  </td></tr>
+  <tr><td style="background:#f9f9f9;padding:16px 32px;text-align:center;border-top:1px solid #eee">
+    <p style="color:#bbb;font-size:12px;margin:0">© Bookaroo — Plateforme d'estimation immobilière participative</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+      };
+
       if (!findUserByEmail) {
 
         if (existingCampaign) {
           await Promise.all([
-            await db.peerCampaign.updateOne(
+            db.peerCampaign.updateOne(
               { _id: existingCampaign._id },
-              { shareCount: existingCampaign.shareCount + 1 }),
-
-            await db.property.updateOne(
+              { $inc: { shareCount: 1 } }),
+            db.property.updateOne(
               { _id: propertyId },
-              { shareCount: findProperty.shareCount + 1 })
-          ])
+              { $inc: { shareCount: 1 } })
+          ]);
         } else {
-          await Promise.all([
-            // await db.peerCampaign.updateOne(
-            //   { _id: existingCampaign._id },
-            //   { shareCount: existingCampaign.shareCount + 1 }),
-
-            await db.property.updateOne(
-              { _id: propertyId },
-              { shareCount: findProperty.shareCount + 1 })
-          ])
+          await db.property.updateOne(
+            { _id: propertyId },
+            { $inc: { shareCount: 1 } });
         }
 
         let nonExistingEmail = {
@@ -4016,18 +4069,8 @@ module.exports = {
         await sendEmail({
           module: "AUTH",
           to: email,
-          subject: "Une propriété a été partagée avec vous",
-          templateId: constants.BREVO.NON_EXISTING_USER_SHARE,
-          params: {
-            name: senderName,
-            email: email,
-            propertyId: propertyId,
-            userId: userId,
-            signUpLink: `${process.env.FRONT_WEB_URL}/Signup`,
-            propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${propertyId}`,
-            appName: "AnyHomes",
-            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
-          }
+          subject: `Donnez votre avis ! Estimation d'un bien${city ? ` à ${city}` : ""}`,
+          htmlContent: buildEstimationEmail(false),
         });
 
         logPropertyActivity(propertyId, "share", { userId, label: "Partage du bien par un utilisateur" });
@@ -4039,24 +4082,17 @@ module.exports = {
 
         if (existingCampaign) {
           await Promise.all([
-            await db.peerCampaign.updateOne(
+            db.peerCampaign.updateOne(
               { _id: existingCampaign._id },
-              { shareCount: existingCampaign.shareCount + 1 }),
-
-            await db.property.updateOne(
+              { $inc: { shareCount: 1 } }),
+            db.property.updateOne(
               { _id: propertyId },
-              { shareCount: findProperty.shareCount + 1 })
-          ])
+              { $inc: { shareCount: 1 } })
+          ]);
         } else {
-          await Promise.all([
-            // await db.peerCampaign.updateOne(
-            //   { _id: existingCampaign._id },
-            //   { shareCount: existingCampaign.shareCount + 1 }),
-
-            await db.property.updateOne(
-              { _id: propertyId },
-              { shareCount: findProperty.shareCount + 1 })
-          ])
+          await db.property.updateOne(
+            { _id: propertyId },
+            { $inc: { shareCount: 1 } });
         }
 
         let existingEmail = {
@@ -4069,17 +4105,8 @@ module.exports = {
         await sendEmail({
           module: "AUTH",
           to: email,
-          subject: "Une propriété a été partagée avec vous",
-          templateId: constants.BREVO.EXISTING_USER_SHARE,
-          params: {
-            name: senderName,
-            email: email,
-            propertyId: propertyId,
-            userId: userId,
-            propertyLink: `${process.env.FRONT_WEB_URL}/property-details?id=${propertyId}`,
-            appName: "AnyHomes",
-            logoUrl: `${process.env.BACK_WEB_URL}/img/logo.png`,
-          }
+          subject: `Donnez votre avis ! Estimation d'un bien${city ? ` à ${city}` : ""}`,
+          htmlContent: buildEstimationEmail(true),
         });
 
         logPropertyActivity(propertyId, "share", { userId, label: "Partage du bien par un utilisateur" });

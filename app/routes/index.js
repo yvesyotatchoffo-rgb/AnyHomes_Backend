@@ -72,6 +72,12 @@ router.use("/admin/property-attractivity", require("./admin-property-attractivit
 router.use("/admin/campaigns", require("./admin-campaigns.routes"));
 router.use("/admin/bizdev-leads", require("./bizdevLeads.routes"));
 
+// ── Web Scraper ─────────────────────────────────────────────────────────────
+router.use("/scrape", require("./scrape.routes"));
+
+// ── Coach IA System ─────────────────────────────────────────────────────────
+router.use("/coach", require("./coach.routes"));
+
 // ── Marketplace de services ────────────────────────────────────────────────
 router.use("/marketplace", require("../modules/services-marketplace/routes/public"));
 router.use("/pro/marketplace", require("../modules/services-marketplace/routes/pro"));

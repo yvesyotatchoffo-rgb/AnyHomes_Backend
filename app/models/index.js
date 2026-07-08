@@ -85,4 +85,10 @@ db.referralInvitations = require("./referralInvitation.model.js")(mongoose)
 db.propertyReport = require("./propertyReport.model.js")(mongoose)
 db.proRequest = require("./proRequest.model.js")(mongoose)
 
+// Coach IA Models
+db.CoachTriggerDefinition = require("./coachTriggerDefinition.model.js")(mongoose)
+db.CoachMessageRequest = require("./coachMessageRequest.model.js")(mongoose)
+db.CoachMessageRecord = require("./coachMessageRecord.model.js")(mongoose)
+db.CoachMessageHistory = require("./coachMessageHistory.model.js")(mongoose)
+
 module.exports = db;
