@@ -7,5 +7,6 @@ router.get('/admin/detail', onboarding.getAdminDetail);
 router.put('/profile', onboarding.updateProfile);
 router.put('/objective', onboarding.updateObjective);
 router.post('/event', onboarding.sendEvent);
+router.post('/celebration-seen', onboarding.markCelebrationSeen);
 
 module.exports = router;

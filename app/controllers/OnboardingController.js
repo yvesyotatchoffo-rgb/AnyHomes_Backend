@@ -6,6 +6,7 @@ const DEFAULT = {
   profile: 'owner',
   objective: 'sell',
   completions: {},
+  completionCelebrationSeen: false,
 };
 
 // Map persisted signupObjective (French labels) to onboarding profile/objective
@@ -418,5 +419,22 @@ module.exports = {
       } catch (err) {
         console.error('Onboarding.getAdminDetail', err);
         return res.status(500).json({ success: false, message: err.message });
-      }      }
+      }      },
+
+    markCelebrationSeen: async (req, res) => {
+      try {
+        const userId = req.identity?.id || req.body.userId;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+        await Onboarding.findOneAndUpdate(
+          { userId: uid },
+          { $set: { completionCelebrationSeen: true } },
+          { upsert: true, new: true }
+        );
+        return res.status(200).json({ success: true });
+      } catch (err) {
+        console.error('Onboarding.markCelebrationSeen', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }
+    },
     };
