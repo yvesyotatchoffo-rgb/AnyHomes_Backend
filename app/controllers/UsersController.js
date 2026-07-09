@@ -1030,6 +1030,7 @@ module.exports = {
           data.financingReferenceScore = scoreResult.score || 0;
           data.financingReferenceScoreSource = "auto";
           data.financingReferenceScoreUpdatedAt = new Date();
+          data.buyerScoringResult = scoreResult;
         }
 
         if (data.declarativeRenterFiles) {
@@ -1039,6 +1040,7 @@ module.exports = {
           data.renterFinancingReferenceScore = renterScoreResult.score || 0;
           data.renterFinancingReferenceScoreSource = "auto";
           data.renterFinancingReferenceScoreUpdatedAt = new Date();
+          data.renterScoringResult = renterScoreResult;
         }
 
         await Users.updateOne({ _id: userData._id }, data);
@@ -1054,6 +1056,8 @@ module.exports = {
           code: 200,
           message: constants.onBoarding.PROFILE_UPDATED,
           scoringResult: scoreResult || renterScoreResult || null,
+          renterScoringResult: renterScoreResult || null,
+          buyerScoringResult: scoreResult || null,
         });
       } else {
         return res.status(400).json({

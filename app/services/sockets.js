@@ -60,12 +60,12 @@ const buildGuestEstimationProperties = (backendUrl) => {
       propertyTitle: "Appartement lumineux à Lyon",
       address: "12 Rue de la République, 69002 Lyon",
       propertyType: "Appartement",
-      surface: 82,
+      surface: 115,
       propertyFloor: 4,
       totalFloorBuilding: 6,
       bedrooms: 2,
       bathroom: 1,
-      referencePrice: 420000,
+      referencePrice: 1213250,
       location: { lat: 45.7640, lng: 4.8357 },
       zipcode: "69002",
       images: [
@@ -92,6 +92,7 @@ const buildGuestCampaigns = (propertyId) => [
     startDate: new Date("2026-04-01"),
     duration: "1Week",
     pricePerSqm: 10800,
+    referencePrice: 1242000,
     status: "active",
     totalUsers: 42,
     propertyLikes: 85,
@@ -105,6 +106,7 @@ const buildGuestCampaigns = (propertyId) => [
     startDate: new Date("2026-03-15"),
     duration: "1Month",
     pricePerSqm: 9800,
+    referencePrice: 1127000,
     status: "ended",
     totalUsers: 28,
     propertyLikes: 60,
@@ -119,9 +121,9 @@ const buildGuestEstimationStats = () => ({
       underEstimatedProperties: 3,
       appropriateProperties: 7,
       expensiveProperties: 2,
-      minPrice: 9200,
-      maxPrice: 12300,
-      avgPrice: 10550,
+      minPrice: 1058000,
+      maxPrice: 1414500,
+      avgPrice: 1213250,
       totalUsers: 57,
     },
   ],
@@ -1246,23 +1248,14 @@ exports.initializeSocket = function (startServer) {
               as: "followProperties"
             }
           },
-          // {
-          //   $addFields: {
-          //     zipcodeAsNumber: {
-          //       $convert: {
-          //         input: "$zipcode",
-          //         to: "double",
-          //         onError: null,
-          //         onNull: null,
-          //       }
-          //     }
-          //   },
-          // },
+          // Lookup market reference price by postal code (string match)
           {
             $lookup: {
               from: "campaignrefprices",
-              localField: "zipcodeAsNumber",
-              foreignField: "postalCode",
+              let: { zipStr: "$zipcode" },
+              pipeline: [
+                { $match: { $expr: { $eq: ["$postalCode", "$$zipStr"] } } }
+              ],
               as: "matchPostalCodeData"
             }
           },
@@ -1272,45 +1265,7 @@ exports.initializeSocket = function (startServer) {
               preserveNullAndEmptyArrays: true
             }
           },
-          // {
-          //   $addFields: {
-          //     referencePrice: {
-          //       $cond: {
-          //         if: {
-          //           $or: [
-          //             { $eq: ["$referencePrice", null] },
-          //             { $not: ["$referencePrice"] },
-          //           ]
-          //         },
-          //         then: "$matchPostalCodeData.refPrice",
-          //         else: "$referencePrice"
-          //       }
-          //     }
-          //   }
-          // },
-          {
-            $addFields: {
-              referencePrice: {
-                $cond: {
-                  if: { $ifNull: ["$surface", false] },
-                  then: {
-                    $multiply: [
-                      { $toDouble: "$surface" },
-                      { $ifNull: ["$matchPostalCodeData.refPrice", 2001] }
-                    ]
-                  },
-                  else: "$referencePrice"
-                }
-              }
-            }
-          },
-          {
-            $addFields: {
-              isLiked: { $gt: [{ $size: "$favProperties" }, 0] },
-              isFollowed: { $gt: [{ $size: "$followProperties" }, 0] }
-            }
-          },
-          // Lookup active campaigns for this property to enable priority sorting
+          // Lookup active campaigns BEFORE computing referencePrice so we can use campaign pricePerSqm
           {
             $lookup: {
               from: "peercampaigns",
@@ -1332,9 +1287,36 @@ exports.initializeSocket = function (startServer) {
             }
           },
           {
+            // referencePrice logic:
+            // - Campaign property  → pricePerSqm (owner-set) × surface
+            // - Non-campaign property → market refPrice (postal code DB) × surface
             $addFields: {
+              referencePrice: {
+                $cond: {
+                  if: { $gt: [{ $size: "$activeCampaigns" }, 0] },
+                  then: {
+                    $multiply: [
+                      { $toDouble: { $ifNull: ["$surface", 0] } },
+                      { $ifNull: [{ $arrayElemAt: ["$activeCampaigns.pricePerSqm", 0] }, 2001] }
+                    ]
+                  },
+                  else: {
+                    $cond: {
+                      if: { $ifNull: ["$surface", false] },
+                      then: {
+                        $multiply: [
+                          { $toDouble: "$surface" },
+                          { $ifNull: ["$matchPostalCodeData.refPrice", 2001] }
+                        ]
+                      },
+                      else: { $ifNull: ["$referencePrice", 0] }
+                    }
+                  }
+                }
+              },
               hasCampaign: { $gt: [{ $size: "$activeCampaigns" }, 0] },
-              // Random value within each priority group for fair shuffling
+              isLiked: { $gt: [{ $size: "$favProperties" }, 0] },
+              isFollowed: { $gt: [{ $size: "$followProperties" }, 0] },
               _sortRand: { $rand: {} }
             }
           },

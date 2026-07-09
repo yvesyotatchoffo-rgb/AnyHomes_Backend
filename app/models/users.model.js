@@ -211,6 +211,8 @@ module.exports = (mongoose) => {
       renterFinancingReferenceScore: { type: Number, min: 0, max: 100, default: 0 },
       renterFinancingReferenceScoreSource: { type: String, enum: ["auto", "admin", "verified"], default: "auto" },
       renterFinancingReferenceScoreUpdatedAt: { type: Date },
+      renterScoringResult: { type: Schema.Types.Mixed, default: null },
+      buyerScoringResult: { type: Schema.Types.Mixed, default: null },
       isBlocked: { type: Boolean, default: false },
       customerId: { type: String },
       subscriptionId: { type: String },                  // current subscriptionId

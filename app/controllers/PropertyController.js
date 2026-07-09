@@ -74,7 +74,10 @@ async function getOffMarketAccessLevel(property, loggedInUserId, userData) {
   const ownerId = String(property.addedBy?._id || property.addedBy || '');
   if (ownerId && ownerId === String(userData._id)) return 'accessible';
   const isRent = String(property.propertyType || '').toLowerCase() === 'rent';
-  const hasProject = isRent ? !!userData.renterFilesAddedAt : !!userData.buyerFilesAddedAt;
+  // hasProject: user has computed their score via the declarative questionnaire
+  const hasProject = isRent
+    ? (userData.renterFinancingReferenceScore != null)
+    : (userData.financingReferenceScore != null);
   if (!hasProject) return 'blurred_no_project';
   const threshold = Number(property.chooseDocumentMinProbability ?? 0);
   let scoreResult;
@@ -544,7 +547,7 @@ module.exports = {
       if (propertyDetail.offMarket) {
         const viewerData = isRealUser
           ? await db.users.findOne({ _id: userId, isDeleted: false })
-              .select('role _id declarativeBuyerFiles declarativeRenterFiles buyerFilesAddedAt renterFilesAddedAt')
+              .select('role _id declarativeBuyerFiles declarativeRenterFiles buyerFilesAddedAt renterFilesAddedAt financingReferenceScore renterFinancingReferenceScore')
               .lean()
           : null;
         const accessLevel = await getOffMarketAccessLevel(propertyDetail, userId, viewerData);

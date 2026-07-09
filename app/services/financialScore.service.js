@@ -406,7 +406,8 @@ const computeRenterScore = async ({ declarativeRenterFiles = {}, property = null
   }
 
   const qualitativeScore = clamp(professionalScore + guarantorScore + currentRentScore, 0, 40);
-  const score = clamp(Math.round(affordabilityScore + qualitativeScore), 0, 100);
+  const rawScore = affordabilityScore + qualitativeScore; // max = 80
+  const score = clamp(Math.round(rawScore / 80 * 100), 0, 100); // normalize to 100-point scale
   const { scoreClass, scoreLabel } = classifyScore(score);
   const topReasons = buildRenterTopReasons({
     affordabilityRatio,
@@ -429,6 +430,8 @@ const computeRenterScore = async ({ declarativeRenterFiles = {}, property = null
     current_rent: Math.round(currentRent),
     score_quantitatif: affordabilityScore,
     score_qualitatif: qualitativeScore,
+    score_raw: rawScore,
+    score_max: 80,
     top_reasons: topReasons,
   };
 };
