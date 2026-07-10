@@ -3701,7 +3701,9 @@ module.exports = {
         );
       }
 
-      data.isVerified = "N";
+      const isSocialSignup = !!req.body.socialLogin;
+      // Social signups (Google/Facebook) are pre-verified — skip OTP entirely
+      data.isVerified = isSocialSignup ? "Y" : "N";
       data.createdAt = new Date();
       data.updatedAt = new Date();
       data.isDeleted = false;
@@ -3712,8 +3714,8 @@ module.exports = {
       } else if (data.signupObjective) {
         delete data.signupObjective;
       }
-      const otp = await generateOTP();
-      data.otp = otp;
+      const otp = isSocialSignup ? null : await generateOTP();
+      if (otp) data.otp = otp;
 
       if (req.body.firstName && req.body.lastName) {
         data["fullName"] = req.body.firstName + " " + req.body.lastName;
@@ -3788,23 +3790,26 @@ module.exports = {
 
       await db.setting.create(setting_payload);
 
-      let emailPayload = {
-        email: createdUser.email,
-        fullName: createdUser.fullName,
-        otp: otp,
-        id: createdUser.id,
-        role: createdUser.role,
-      };
-      await sendEmail({
-        module: "AUTH",
-        to: createdUser.email,
-        subject: "Vérification de votre adresse e-mail Bookaroo",
-        templateId: constants.BREVO.USER_VERIFICATION_LINK,
-        params: {
+      // Social signups are already verified — no OTP email needed
+      if (!isSocialSignup) {
+        let emailPayload = {
+          email: createdUser.email,
           fullName: createdUser.fullName,
           otp: otp,
-        },
-      });
+          id: createdUser.id,
+          role: createdUser.role,
+        };
+        await sendEmail({
+          module: "AUTH",
+          to: createdUser.email,
+          subject: "Vérification de votre adresse e-mail Bookaroo",
+          templateId: constants.BREVO.USER_VERIFICATION_LINK,
+          params: {
+            fullName: createdUser.fullName,
+            otp: otp,
+          },
+        });
+      }
 
       // let email_payload = {
       //   email: data.email,
@@ -3848,6 +3853,22 @@ module.exports = {
         folderCount: folderCount,
         totalpropertiesInFolder: totalpropertiesInFolder,
       };
+
+      // For social signups, generate a JWT so the frontend can log in immediately
+      if (isSocialSignup) {
+        const accessToken = jwt.sign(
+          { id: createdUser._id, role: createdUser.role },
+          process.env.JWT_SECRET,
+          { expiresIn: "24h" }
+        );
+        responseData.access_token = accessToken;
+        return res.status(200).json({
+          success: true,
+          socialSignup: true,
+          message: "User registered successfully.",
+          data: responseData,
+        });
+      }
 
       // await Emails.loginCredentialEmail(email_payload);
       return res.status(200).json({

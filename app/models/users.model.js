@@ -234,7 +234,9 @@ module.exports = (mongoose) => {
       monthlyCampaignUsage: { type: Number, }, //depends acc to plan
       isImported: { type: Boolean }, //if true key to identify if the user is imported via csv
       // Referral / invitation
-      shareCode: { type: String, unique: true, sparse: true, default: null },
+      // No default: null — sparse index only skips missing fields, not explicit nulls.
+      // A null default would cause E11000 duplicate key on second user creation.
+      shareCode: { type: String, unique: true, sparse: true },
       invitedByUserId: { type: require('mongoose').Schema.Types.ObjectId, ref: 'users', default: null },
       invitationSource: { type: String, default: null },
       invitationAcceptedAt: { type: Date, default: null },

@@ -76,6 +76,12 @@ router.use("/admin/bizdev-leads", require("./bizdevLeads.routes"));
 // ── Web Scraper ─────────────────────────────────────────────────────────────
 router.use("/scrape", require("./scrape.routes"));
 
+// ── External Listings (MoteurImmo, etc.) ────────────────────────────────────
+router.use("/external-listings", require("./externalListings.routes"));
+
+// ── Import Runs (MoteurImmo sync runs) ──────────────────────────────────────
+router.use("/import-runs", require("./importRun.routes"));
+
 // ── Coach IA System ─────────────────────────────────────────────────────────
 router.use("/coach", require("./coach.routes"));
 

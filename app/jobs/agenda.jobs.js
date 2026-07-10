@@ -133,12 +133,26 @@ module.exports = (agenda, db) => {
   });
   agenda.daily("2:00 am", "coach.cleanup-old-records");
 
-  // ─ MoteurImmo sync job - DISABLED TO FIX SERVER STARTUP
-  // try {
-  //   require("../../cron/moteurimmo.cron.js")(agenda);
-  // } catch (err) {
-  //   console.error('Error loading moteurimmo cron:', err);
-  // }
+  // ─ Image downloader job ──────────────────────────────────────────────────────
+  // Downloads queued images from MoteurImmo source URLs to public/img/ and updates
+  // property.images with the local `file` field so the frontend can serve them.
+  try {
+    const { processQueuedImages } = require("../../scripts/image_downloader");
+
+    agenda.define("image-downloader", async (job) => {
+      try {
+        const processed = await processQueuedImages();
+        console.log(`Image downloader: processed ${processed} jobs`);
+      } catch (err) {
+        console.error("Image downloader job error:", err);
+      }
+    });
+
+    agenda.every("2 minutes", "image-downloader");
+    console.log("Image downloader job scheduled (every 2 minutes).");
+  } catch (err) {
+    console.error("Failed to load image downloader job:", err);
+  }
   //// agenda to delete the unused records
   //   agenda.define("cleanup-agenda-jobs", async () => {
   //   try {

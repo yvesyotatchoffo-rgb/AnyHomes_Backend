@@ -74,10 +74,13 @@ async function getOffMarketAccessLevel(property, loggedInUserId, userData) {
   const ownerId = String(property.addedBy?._id || property.addedBy || '');
   if (ownerId && ownerId === String(userData._id)) return 'accessible';
   const isRent = String(property.propertyType || '').toLowerCase() === 'rent';
-  // hasProject: user has computed their score via the declarative questionnaire
+  // hasProject: user has actually computed their score via the declarative questionnaire.
+  // We use the UpdatedAt timestamp as the indicator: it is only set when the score is
+  // explicitly calculated. The score field itself defaults to 0 in the Mongoose schema,
+  // so checking score != null would wrongly mark all newly-registered users as having a score.
   const hasProject = isRent
-    ? (userData.renterFinancingReferenceScore != null)
-    : (userData.financingReferenceScore != null);
+    ? (userData.renterFinancingReferenceScoreUpdatedAt != null)
+    : (userData.financingReferenceScoreUpdatedAt != null);
   if (!hasProject) return 'blurred_no_project';
   const threshold = Number(property.chooseDocumentMinProbability ?? 0);
   let scoreResult;
@@ -1016,11 +1019,13 @@ module.exports = {
       if (loggedInUser) {
         loggedInUserData = await db.users.findOne({
           _id: loggedInUser
-        });
+        }).lean();
         if (loggedInUserData) {
           // Use -1 when score is not yet calculated so that even threshold=0 ("Tout le monde")
           // requires a computed buyer score — users with no score are excluded from all off-market listings.
-          const hasCalculatedSaleScore = loggedInUserData?.financingReferenceScore != null;
+          // We use UpdatedAt as the real indicator: the score field defaults to 0 in Mongoose schema,
+          // so checking != null would wrongly treat all new users as having a calculated score.
+          const hasCalculatedSaleScore = loggedInUserData?.financingReferenceScoreUpdatedAt != null;
           const userSaleScore = hasCalculatedSaleScore ? Number(loggedInUserData.financingReferenceScore) : -1;
           const userRole = loggedInUserData?.role;
           const isAdminUser = userRole === "admin" || userRole === "staff";
@@ -1819,7 +1824,8 @@ module.exports = {
 
         // Fast-path: no logged-in user → tag all off-market as blurred_no_account
         const processedDocs = docsWithOwner.map(d => {
-          if (!d.offMarket) return d;
+          const isOm = d.offMarket === true || String(d.propertyType || '').toLowerCase() === 'offmarket';
+          if (!isOm) return d;
           return { offMarket: true, offMarketAccessLevel: 'blurred_no_account', propertyType: d.propertyType };
         });
 
@@ -1902,11 +1908,14 @@ module.exports = {
       // accessible     → full data, card shown normally
       // blurred_*      → minimal placeholder, card blurred
       // hidden         → removed from results, total adjusted
-      if (result && result.some(p => p.offMarket)) {
+      // A property is considered off-market if either the boolean flag offMarket===true
+      // OR propertyType==="offmarket" is set (both must be access-controlled).
+      const isOffMarketProp = (p) => p.offMarket === true || String(p.propertyType || '').toLowerCase() === 'offmarket';
+      if (result && result.some(p => isOffMarketProp(p))) {
         const processed = [];
         let hiddenCount = 0;
         for (const property of result) {
-          if (!property.offMarket) { processed.push(property); continue; }
+          if (!isOffMarketProp(property)) { processed.push(property); continue; }
           const accessLevel = await getOffMarketAccessLevel(property, loggedInUser, loggedInUserData);
           if (accessLevel === 'hidden') {
             hiddenCount++;

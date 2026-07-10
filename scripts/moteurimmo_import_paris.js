@@ -33,6 +33,13 @@ async function main() {
   const url = `${baseUrl.replace(/\/$/, '')}/api/ads`;
 
   console.log('Starting full Paris import (radius 10km). This may take time.');
+
+  let run;
+  if (apply) {
+    run = await sync.createRun();
+    console.log('Import run created:', run.runRef);
+  }
+
   let page = 1;
   let totalProcessed = 0;
   while (true) {
@@ -58,6 +65,7 @@ async function main() {
       res = await axios.post(url, body, { headers: { 'Content-Type': 'application/json' }, timeout: 60000 });
     } catch (err) {
       console.error('Fetch failed on page', page, ':', err.response ? err.response.status : err.message);
+      if (run) await sync.finalizeRun(run._id, err.message);
       break;
     }
 
@@ -82,11 +90,18 @@ async function main() {
     let processedThisPage = 0;
     for (let raw of ads) {
       try {
-        if (apply) await sync.upsertListing(raw);
+        if (apply) {
+          const rawType = raw.transactionType || raw.listingType || raw.adType || raw.offerType || raw.propertyType || raw.type || '';
+          const isRent = /rent|location|locatif|loué|bail/i.test(rawType);
+          const inferred = isRent ? 'rent' : 'sale';
+          await sync.upsertListing(raw);
+          await sync.updateRunCounts(run._id, inferred);
+        }
         processedThisPage++;
         totalProcessed++;
       } catch (err) {
         console.error('Upsert error (continuing):', err && err.message ? err.message : err);
+        if (apply && run) await sync.updateRunCounts(run._id, null);
       }
     }
 
@@ -96,6 +111,10 @@ async function main() {
   }
 
   console.log('Import finished. Total processed:', totalProcessed);
+  if (run) {
+    await sync.finalizeRun(run._id);
+    console.log('Import run', run.runRef, 'finalized.');
+  }
   await mongoose.disconnect();
 }
 

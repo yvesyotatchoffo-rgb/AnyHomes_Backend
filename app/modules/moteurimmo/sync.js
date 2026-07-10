@@ -264,7 +264,7 @@ async function upsertListing(raw) {
       if (newImgs.length) {
         for (let imgUrl of newImgs) {
           // push a placeholder into property.images so front can display originalUrl immediately
-          await db.property.updateOne({ _id: prop._id }, { $push: { images: { originalname: imgUrl, status: 'queued' } } });
+          await db.property.updateOne({ _id: prop._id }, { $push: { images: { file: imgUrl, originalname: imgUrl, status: 'queued' } } });
           try {
             await db.mediaJob.create({ propertyId: prop._id, externalListingId: existing._id, originalUrl: imgUrl });
           } catch (err) {
@@ -307,7 +307,7 @@ async function upsertListing(raw) {
   // record original image URLs and create media jobs for background download
   const imageUrls = (dto.images || []).slice(0, 10);
   if (imageUrls.length) {
-    const placeholders = imageUrls.map(u => ({ originalname: u, status: 'queued' }));
+    const placeholders = imageUrls.map(u => ({ file: u, originalname: u, status: 'queued' }));
     property.images = (property.images || []).concat(placeholders);
     await property.save();
     for (let imgUrl of imageUrls) {
@@ -341,18 +341,68 @@ async function upsertListing(raw) {
   return property._id;
 }
 
-async function runOnce({ page = 1, pageSize = config.defaultPageSize } = {}) {
-  const params = { page, pageSize };
-  const data = await moteuService.fetchListings(params);
-  const listings = data && (data.items || data.listings || data) ? (data.items || data.listings || (Array.isArray(data) ? data : [])) : [];
-  for (let raw of listings) {
-    try {
-      await upsertListing(raw);
-    } catch (err) {
-      console.error('Error upserting listing', err && err.message ? err.message : err);
-    }
-  }
-  return listings.length;
+// ── Import Run tracking ──────────────────────────────────────────────────────
+
+async function createRun() {
+  const runRef = 'MI-' + Date.now().toString(36).toUpperCase();
+  return db.importRun.create({
+    runRef,
+    source: 'moteurimmo',
+    startDate: new Date(),
+    status: 'running',
+  });
 }
 
-module.exports = { runOnce, upsertListing };
+async function updateRunCounts(runId, propertyType) {
+  if (!runId) return;
+  const inc = { totalCount: 1 };
+  if (propertyType === 'rent') inc.rentCount = 1;
+  else if (propertyType === 'sale') inc.saleCount = 1;
+  else inc.ignoredCount = 1;
+  await db.importRun.findByIdAndUpdate(runId, { $inc: inc });
+}
+
+async function finalizeRun(runId, error) {
+  if (!runId) return;
+  const run = await db.importRun.findById(runId);
+  if (!run) return;
+  const duration = Math.round((new Date() - run.startDate) / 1000);
+  await db.importRun.findByIdAndUpdate(runId, {
+    $set: {
+      endDate: new Date(),
+      duration,
+      status: error ? 'failed' : 'completed',
+      error: error || undefined,
+    },
+  });
+}
+
+// ── Run with tracking ────────────────────────────────────────────────────────
+
+async function runOnce({ page = 1, pageSize = config.defaultPageSize } = {}) {
+  const run = await createRun();
+  const runId = run._id;
+  try {
+    const params = { page, pageSize };
+    const data = await moteuService.fetchListings(params);
+    const listings = data && (data.items || data.listings || data) ? (data.items || data.listings || (Array.isArray(data) ? data : [])) : [];
+    for (let raw of listings) {
+      try {
+        const dto = await normalizeListing(raw);
+        const propType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+        await upsertListing(raw);
+        await updateRunCounts(runId, propType);
+      } catch (err) {
+        console.error('Error upserting listing', err && err.message ? err.message : err);
+        await updateRunCounts(runId, null);
+      }
+    }
+    await finalizeRun(runId);
+    return listings.length;
+  } catch (err) {
+    await finalizeRun(runId, err.message);
+    throw err;
+  }
+}
+
+module.exports = { runOnce, upsertListing, createRun, updateRunCounts, finalizeRun };
