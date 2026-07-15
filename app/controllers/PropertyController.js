@@ -19,6 +19,7 @@ const { STATUS } = require("../utls/enums");
 const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
 const logPropertyActivity = require("../services/propertyActivityLog.service");
+const statsService = require("../services/propertyStats.service");
 const upload = multer({
   dest: "uploads/", // Destination folder
   limits: {
@@ -509,6 +510,11 @@ module.exports = {
         }
       } catch (emailErr) {
         console.error('[Email] PROPERTY_CREATED_CONFIRMATION setup:', emailErr.message);
+      }
+
+      // Fire-and-forget: update stats counter if property is active
+      if (property.status === 'active') {
+        statsService.increment(property);
       }
 
       return res.status(200).json({
@@ -1874,8 +1880,7 @@ module.exports = {
 
       if (!dynamicRentFiltering && !heavyFiltersPresent) {
         // Lightweight query: only return essential fields for the listing table
-        const projection = {
-          propertyTitle: 1,
+        const projection = {          propertyTitle: 1,
           address: 1,
           city: 1,
           zipcode: 1,
@@ -1896,10 +1901,31 @@ module.exports = {
           propertyViewerCount: 1,
         };
 
-        const total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
+        // Use pre-computed counter when no complex filters are active (O(1) vs O(N) countDocuments)
+        // Falls back to countDocuments when a filter narrows the result set beyond total counts.
+        let total;
+        // A "simple" query is just { isDeleted: false, status: 'active' } — no text, no city, no addedBy etc.
+        const queryKeys = Object.keys(query || {});
+        const isSimpleActiveQuery = queryKeys.length === 2
+          && queryKeys.includes('isDeleted')
+          && queryKeys.includes('status')
+          && query.status === 'active'
+          && query.isDeleted === false
+          && Object.keys(financingProbabilityMatch || {}).length === 0;
+
+        if (isSimpleActiveQuery) {
+          // Read from stats cache — sub-millisecond, scales to 5M+ docs
+          const cached = await statsService.getTotal();
+          total = (cached !== null) ? cached : await Property.countDocuments({ ...query });
+        } else if (query.$text && pageNumber > 1) {
+          // Text search on pages 2+: reuse cachedTotal sent by client to avoid 4-second count
+          const clientTotal = Number(req.query.cachedTotal);
+          total = (clientTotal > 0) ? clientTotal : await Property.countDocuments({ ...query, ...financingProbabilityMatch });
+        } else {
+          total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
+        }
+
         const skipNo = (pageNumber - 1) * pageSize;
-        // When using $text search, skip createdAt sort (forces 6000+ doc in-memory sort → slow)
-        // MongoDB returns $text results ordered by relevance by default, which is better UX anyway
         const fastPathSort = (query.$text && !sortBy) ? {} : sortquery;
         const docs = await Property.find({ ...query, ...financingProbabilityMatch })
           .select(projection)
@@ -2951,6 +2977,12 @@ module.exports = {
         }, {
           isDeleted: true
         });
+
+        // Decrement stats if property was active
+        if (findProperty.status === 'active') {
+          statsService.decrement(findProperty);
+        }
+
         return res.status(200).json({
           success: true,
           message: constants.PROPERTY.DELETED,
