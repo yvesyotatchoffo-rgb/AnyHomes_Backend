@@ -21,6 +21,7 @@ const logActivity = require("../services/activityLog.service");
 const logPropertyActivity = require("../services/propertyActivityLog.service");
 const statsService = require("../services/propertyStats.service");
 const coordService = require("../services/propertyCoordinates.service");
+const cacheService = require("../services/cache.service");
 const upload = multer({
   dest: "uploads/", // Destination folder
   limits: {
@@ -540,6 +541,9 @@ module.exports = {
         coordService.upsert(property);
       }
 
+      // Invalidate Redis cache for listing/count
+      cacheService.invalidateAll();
+
       return res.status(200).json({
         success: true,
         data: property,
@@ -945,7 +949,13 @@ module.exports = {
         const cached = await statsService.sumByPrefix(`city:${textCity}`);
         total = cached !== null ? cached : await Property.countDocuments(query);
       } else {
-        total = await Property.countDocuments(query);
+        // Try Redis cache for filtered counts
+        const cacheKey = `count:${cacheService.hashQuery(query)}`;
+        total = await cacheService.get(cacheKey);
+        if (total === null) {
+          total = await Property.countDocuments(query);
+          cacheService.set(cacheKey, total, 120);
+        }
       }
 
       return res.status(200).json({ success: true, total });
@@ -2038,8 +2048,11 @@ module.exports = {
         $sort: sortquery,
       };
       // Fast-path: if no heavy filters are present, use a lightweight find() with projection
+      // Note: loggedInUser is intentionally excluded — user interaction data
+      // (favorites, follow) is now fetched via GET /property/batch-status,
+      // avoiding expensive per-row $lookup stages in the listing pipeline.
       const heavyFiltersPresent = Boolean(
-        amenities || address || situation || investment || loggedInUser || schoolId || schoolType || schoolStatus || schoolName || add_more_step
+        amenities || address || situation || investment || schoolId || schoolType || schoolStatus || schoolName || add_more_step
       );
 
       if (!dynamicRentFiltering && !heavyFiltersPresent) {
@@ -2100,6 +2113,20 @@ module.exports = {
           total = (clientTotal > 0) ? clientTotal : await Property.countDocuments({ ...query, ...financingProbabilityMatch });
         } else {
           total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
+        }
+
+        // Redis cache — serve page 1 for simple queries from cache (no cursor)
+        if (!cursor && pageNumber <= 1 && isSimpleActiveQuery) {
+          const cacheKey = `listing:p1:${cacheService.hashQuery(query)}`;
+          const cached = await cacheService.get(cacheKey);
+          if (cached) {
+            return res.status(200).json({
+              success: true,
+              message: constants.PROPERTY.RETRIEVED,
+              total: cached.total,
+              data: cached.data,
+            });
+          }
         }
 
         // Cursor-based pagination (avoids slow skip() for deep pages)
@@ -2163,6 +2190,12 @@ module.exports = {
           if (!isOm) return d;
           return { offMarket: true, offMarketAccessLevel: 'blurred_no_account', propertyType: d.propertyType };
         });
+
+        // Cache page 1 results in Redis for 30s (only simple queries, no cursor)
+        if (!useCursor && pageNumber <= 1 && isSimpleActiveQuery) {
+          const cacheKey = `listing:p1:${cacheService.hashQuery(query)}`;
+          cacheService.set(cacheKey, { total, data: processedDocs }, 30);
+        }
 
         return res.status(200).json({
           success: true,
@@ -3116,6 +3149,65 @@ module.exports = {
   //   }
   // },
 
+  /**
+   * GET /property/batch-status?propertyIds=id1,id2,...
+   * Returns per-user interaction status (favorite, follow) for a batch of properties.
+   * Allows the listing endpoint to skip expensive $lookup stages.
+   */
+  batchStatus: async (req, res) => {
+    try {
+      const userId = req.identity?.id;
+      if (!userId) {
+        return res.status(200).json({ success: true, data: {} });
+      }
+
+      const rawIds = req.query.propertyIds || '';
+      const propertyIds = rawIds.split(',').map(id => id.trim()).filter(Boolean);
+      if (propertyIds.length === 0) {
+        return res.status(200).json({ success: true, data: {} });
+      }
+
+      const objectIds = propertyIds
+        .map(id => { try { return new mongoose.Types.ObjectId(id); } catch (_) { return null; } })
+        .filter(Boolean);
+
+      if (objectIds.length === 0) {
+        return res.status(200).json({ success: true, data: {} });
+      }
+
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+
+      // Batch fetch all favorites for this user + properties
+      const favorites = await db.favorites.find({
+        user_id: userObjectId,
+        property_id: { $in: objectIds },
+        like: true,
+      }).select('property_id').lean();
+      const favoritedIds = new Set(favorites.map(f => String(f.property_id)));
+
+      // Batch fetch all follows for this user + properties
+      const follows = await db.followUnfollow.find({
+        user_id: userObjectId,
+        property_id: { $in: objectIds },
+        follow_unfollow: true,
+      }).select('property_id').lean();
+      const followedIds = new Set(follows.map(f => String(f.property_id)));
+
+      // Build response map
+      const data = {};
+      for (const id of propertyIds) {
+        data[id] = {
+          liked: favoritedIds.has(id),
+          followed: followedIds.has(id),
+        };
+      }
+
+      return res.status(200).json({ success: true, data });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
   statusChange: async (req, res) => {
     try {
       let id = req.body.id;
@@ -3146,6 +3238,7 @@ module.exports = {
             statsService.increment(findProperty);
             coordService.upsert(findProperty);
           }
+          cacheService.invalidateAll();
           return res.status(200).json({
             success: true,
             message: constants.PROPERTY.STATUS_CHANGED,
@@ -3193,6 +3286,8 @@ module.exports = {
           statsService.decrement(findProperty);
           coordService.remove(findProperty._id);
         }
+
+        cacheService.invalidateAll();
 
         return res.status(200).json({
           success: true,
@@ -3569,9 +3664,10 @@ module.exports = {
           coordService.upsert(newProp);
         }
       } else if (newProp.status === 'active') {
-        // Stats didn't change but coordinates might (e.g. price update)
         coordService.upsert(newProp);
       }
+
+      cacheService.invalidateAll();
 
       logActivity(req.identity.id, "property_update", { label: "Bien modifié", objectType: "property", objectId: propertyId, objectTitle: updatedProperty.propertyTitle || "" });
       return res.status(200).json({

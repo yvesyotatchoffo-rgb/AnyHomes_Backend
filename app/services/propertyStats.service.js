@@ -7,6 +7,7 @@
  * Usage:
  *   await statsService.increment(property)   // after property becomes active
  *   await statsService.decrement(property)   // after property is deleted or deactivated
+ *   await statsService.reconcileAll()        // periodic full rebuild (cron)
  */
 
 const PropertyStats = require('../models/propertyStats.model');
@@ -14,6 +15,7 @@ const PropertyStats = require('../models/propertyStats.model');
 /**
  * Build the list of stat keys for a given property.
  * Only called for active, non-deleted properties.
+ * Includes composite keys for common filter combinations.
  */
 function keysForProperty(property) {
   const keys = ['total'];
@@ -26,6 +28,10 @@ function keysForProperty(property) {
 
   const type = (property.propertyType || '').trim().toLowerCase();
   if (type) keys.push(`type:${type}`);
+
+  // Composite keys for common filter combinations
+  if (city && type) keys.push(`city:${city}|type:${type}`);
+  if (zip && type) keys.push(`zip:${zip}|type:${type}`);
 
   return keys;
 }
@@ -114,4 +120,73 @@ async function sumByPrefix(prefix) {
   }
 }
 
-module.exports = { increment, decrement, getTotal, getCount, sumByPrefix, keysForProperty };
+/**
+ * Full reconciliation — drop and rebuild property_stats from scratch.
+ * Safe to call on a live system (reads are served from property_stats once rebuilt).
+ * Designed to be called periodically (e.g. every 6h via cron).
+ */
+async function reconcileAll() {
+  const col = PropertyStats.collection;
+  const propsCol = col.connection.db.collection('properties');
+
+  // Drop existing stats
+  await col.drop().catch(() => {});
+  console.log('[PropertyStats] Dropped existing stats');
+
+  const BATCH = 10000;
+  let skip = 0;
+  let processed = 0;
+  const counters = {};
+
+  while (true) {
+    const docs = await propsCol
+      .find({ isDeleted: false, status: 'active' })
+      .project({ city: 1, zipcode: 1, propertyType: 1 })
+      .skip(skip)
+      .limit(BATCH)
+      .toArray();
+
+    if (docs.length === 0) break;
+
+    for (const doc of docs) {
+      counters.total = (counters.total || 0) + 1;
+
+      const city = (doc.city || '').trim().toLowerCase();
+      if (city) {
+        counters[`city:${city}`] = (counters[`city:${city}`] || 0) + 1;
+      }
+
+      const zip = (doc.zipcode || '').trim();
+      if (zip) {
+        counters[`zip:${zip}`] = (counters[`zip:${zip}`] || 0) + 1;
+      }
+
+      const type = (doc.propertyType || '').trim().toLowerCase();
+      if (type) {
+        counters[`type:${type}`] = (counters[`type:${type}`] || 0) + 1;
+      }
+
+      if (city && type) {
+        counters[`city:${city}|type:${type}`] = (counters[`city:${city}|type:${type}`] || 0) + 1;
+      }
+
+      if (zip && type) {
+        counters[`zip:${zip}|type:${type}`] = (counters[`zip:${zip}|type:${type}`] || 0) + 1;
+      }
+    }
+
+    processed += docs.length;
+    skip += BATCH;
+  }
+
+  const now = new Date();
+  const entries = Object.entries(counters).map(([_id, count]) => ({ _id, count, updatedAt: now }));
+  const INSERT_BATCH = 1000;
+  for (let i = 0; i < entries.length; i += INSERT_BATCH) {
+    await col.insertMany(entries.slice(i, i + INSERT_BATCH), { ordered: false });
+  }
+
+  console.log(`[PropertyStats] Rebuilt ${entries.length} entries from ${processed} active properties`);
+}
+
+module.exports = { increment, decrement, getTotal, getCount, sumByPrefix, keysForProperty, reconcileAll };

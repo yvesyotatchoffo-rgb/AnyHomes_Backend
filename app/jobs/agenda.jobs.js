@@ -161,6 +161,14 @@ module.exports = (agenda, db) => {
     console.error("Failed to load MoteurImmo status check job:", err);
   }
 
+  // ─ Property stats reconciliation ─────────────────────────────────────────
+  try {
+    require("../../cron/propertyStats.cron")(agenda);
+    console.log("Property stats reconciliation job scheduled (every 6 hours).");
+  } catch (err) {
+    console.error("Failed to load property stats reconciliation job:", err);
+  }
+
   //// agenda to delete the unused records
   //   agenda.define("cleanup-agenda-jobs", async () => {
   //   try {

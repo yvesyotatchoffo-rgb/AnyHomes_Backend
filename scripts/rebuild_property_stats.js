@@ -65,6 +65,18 @@ async function run() {
         const k = `type:${type}`;
         counters[k] = (counters[k] || 0) + 1;
       }
+
+      // Composite: city + type
+      if (city && type) {
+        const k = `city:${city}|type:${type}`;
+        counters[k] = (counters[k] || 0) + 1;
+      }
+
+      // Composite: zip + type
+      if (zip && type) {
+        const k = `zip:${zip}|type:${type}`;
+        counters[k] = (counters[k] || 0) + 1;
+      }
     }
 
     processed += docs.length;

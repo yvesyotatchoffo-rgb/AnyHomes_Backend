@@ -92,6 +92,55 @@ function inferPropertyKind(kindText) {
   return 'apartment';
 }
 
+/**
+ * Detect if a listing does NOT correspond to an existing property (land, off-plan, etc.)
+ * Only matches unambiguous patterns to avoid false positives (e.g. houses that happen
+ * to have "constructible" land or "terrain à vendre" as a feature).
+ */
+function isNonExistingProperty(dto) {
+  const title = (dto.propertyTitle || '').toLowerCase().trim();
+  const content = (dto.content || '').toLowerCase().replace(/<[^>]+>/g, ' ');
+
+  // Patterns in title indicating land, off-plan, or construction packages.
+  // Avoid: "constructible" alone (matches houses on building land),
+  //        "terrain à vendre" (matches "maison avec terrain à vendre"),
+  //        "lotissement" (matches houses in housing developments).
+  const titlePatterns = [
+    /^terrain\b/,
+    /\bterrain\s+(à\s?bâtir|a\s?batir|constructible|nu|plat)\b/,
+    /\bterrain\s*[+&]\s*maison\b/,
+    /\b(à|a)\s*bâtir\b/,
+    /\bsur\s*plan\b/,
+    /\bvefa\b/,
+    /\bprogramme\s+neuf\b/,
+    /\brésidence\s+neuve\b/,
+    /\bvente\s+en\s+l['\u2019]?état\s+futur\b/,
+    /\bterrain\s+avec\s+(?:pc|permis)\b/,
+  ];
+
+  for (const pattern of titlePatterns) {
+    if (pattern.test(title)) return true;
+  }
+
+  // Patterns in content — only for unambiguous land indicators
+  const contentPatterns = [
+    /\bterrain\s+(à\s?bâtir|a\s?batir|constructible|nu)\b/,
+    /\bvente\s+en\s+l['\u2019]?état\s+futur\b/,
+  ];
+
+  for (const pattern of contentPatterns) {
+    if (pattern.test(content)) return true;
+  }
+
+  // If the first ~100 chars of clean content describe a land plot (not an existing building)
+  const firstChars = content.replace(/<[^>]+>/g, ' ').trim().slice(0, 100).toLowerCase();
+  if (/^(?:beau|joli|grand|magnifique|superbe)?\s*terrain\b/.test(firstChars)) {
+    return true;
+  }
+
+  return false;
+}
+
 function inferPropertyStatus(listingStatus) {
   const normalized = String(listingStatus || '').toLowerCase();
   if (/sold|inactive|archived|unavailable|deleted|removed|cancelled|cancelled/.test(normalized)) return 'inactive';
@@ -215,6 +264,12 @@ async function upsertListing(raw) {
   const adCategory = dto.category || '';
   if (!RESIDENTIAL_CATEGORIES.includes(adCategory)) {
     console.log(`  [SKIP] Non-residential category "${adCategory}" for "${(dto.propertyTitle || '').slice(0, 60)}"`);
+    return null;
+  }
+
+  // Skip listings that are not existing properties (land, off-plan, etc.)
+  if (isNonExistingProperty(dto)) {
+    console.log(`  [SKIP] Non-existing property (land/off-plan) for "${(dto.propertyTitle || '').slice(0, 60)}"`);
     return null;
   }
 

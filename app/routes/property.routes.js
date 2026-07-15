@@ -11,6 +11,7 @@ router.get("/detail", property.details);
 router.get("/map-markers", property.mapMarkers);
 router.get("/count", property.count);
 router.get("/listing", property.listing);
+router.get("/batch-status", property.batchStatus);
 router.put("/statusChange", property.statusChange);
 router.delete("/deleteProperty", property.delete);
 router.put("/editProperty", property.editProperty);

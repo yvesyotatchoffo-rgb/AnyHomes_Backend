@@ -134,6 +134,54 @@ db.mongoose
     } catch (e) {
       console.error('Agenda configuration not available, skipping job scheduler:', e);
     }
+
+    // Pre-warm caches asynchronously — non-blocking, errors are logged only
+    const prewarmCaches = async () => {
+      try {
+        const controller = require('./app/controllers/PropertyController');
+        if (typeof controller.mapMarkers?.prewarm === 'function') {
+          await Promise.all([
+            controller.mapMarkers.prewarm(500),
+            controller.mapMarkers.prewarm(2000),
+          ]);
+          console.log('[Prewarm] map-markers cache warmed (500 + 2000)');
+        }
+      } catch (e) {
+        console.warn('[Prewarm] map-markers cache error:', e.message);
+      }
+
+      // Pre-warm property_stats total count (ensures the first visitor gets a cached value)
+      try {
+        const statsService = require('./app/services/propertyStats.service');
+        const total = await statsService.getTotal();
+        if (total === null) {
+          statsService.reconcileAll().catch(e =>
+            console.warn('[Prewarm] stats rebuild error:', e.message)
+          );
+        } else {
+          console.log(`[Prewarm] property_stats total = ${total.toLocaleString()}`);
+        }
+      } catch (e) {
+        console.warn('[Prewarm] property_stats error:', e.message);
+      }
+
+      // Pre-warm property_coordinates if empty (for map markers)
+      try {
+        const coordService = require('./app/services/propertyCoordinates.service');
+        const mongoose = require('mongoose');
+        const count = await mongoose.connection.db.collection('property_coordinates').countDocuments();
+        if (count === 0) {
+          coordService.reconcileAll().catch(e =>
+            console.warn('[Prewarm] coordinates rebuild error:', e.message)
+          );
+        } else {
+          console.log(`[Prewarm] property_coordinates has ${count.toLocaleString()} entries`);
+        }
+      } catch (e) {
+        console.warn('[Prewarm] property_coordinates error:', e.message);
+      }
+    };
+    prewarmCaches();
   })
   .catch((err) => {
     console.log("Cannot connect to the database!", err);
