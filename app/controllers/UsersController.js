@@ -1834,8 +1834,11 @@ module.exports = {
         {
           $lookup: {
             from: "properties",
-            localField: "_id",
-            foreignField: "addedBy",
+            let: { userId: "$_id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$addedBy", "$$userId"] } } },
+              { $project: { propertyType: 1 } },
+            ],
             as: "propertyDetail",
           },
         },
@@ -1993,7 +1996,7 @@ module.exports = {
 
       // const total = await Users.countDocuments(query);
       const totalPipeline = [...pipeline, { $count: "count" }];
-      const totalResult = await Users.aggregate(totalPipeline);
+      const totalResult = await Users.aggregate(totalPipeline).option({ allowDiskUse: true });
       const total = totalResult.length > 0 ? totalResult[0].count : 0;
 
       if (page && count) {
@@ -2001,7 +2004,7 @@ module.exports = {
         pipeline.push({ $skip: Number(skipNo) }, { $limit: Number(count) });
       }
 
-      const result = await Users.aggregate([...pipeline]);
+      const result = await Users.aggregate([...pipeline]).option({ allowDiskUse: true });
 
       return res.status(200).json({
         success: true,

@@ -75,6 +75,13 @@ async function normalizeListing(raw) {
   dto.propertyTitle = raw.title || raw.headline || '';
   dto.name = dto.propertyTitle;
   dto.content = raw.description || raw.body || '';
+  // Convert plain text newlines to HTML for frontend display
+  if (dto.content && !dto.content.includes('<')) {
+    dto.content = dto.content
+      .replace(/\n{2,}/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    dto.content = '<p>' + dto.content + '</p>';
+  }
 
   dto.price = raw.price != null ? Number(raw.price) : (raw.rent != null ? Number(raw.rent) : (raw.originalPrice != null ? Number(raw.originalPrice) : null));
   dto.originalPrice = raw.originalPrice != null ? Number(raw.originalPrice) : null;
@@ -88,7 +95,7 @@ async function normalizeListing(raw) {
   dto.floor = raw.floor || raw.level || null;
   dto.livingRoom = raw.livingRoom || raw.living_room || raw.livingRoomCount || null;
   dto.buildingYear = raw.yearBuilt || raw.buildingYear || raw.constructionYear || null;
-  dto.propertyMonthlyCharges = raw.monthlyCharges || raw.propertyMonthlyCharges || raw.maintenanceCharges || null;
+  dto.propertyMonthlyCharges = raw.monthlyCharges || raw.propertyMonthlyCharges || raw.maintenanceCharges || raw.rent || null;
   dto.guaranteeDeposit = raw.guaranteeDeposit || raw.securityDeposit || null;
   dto.propertyInventory = raw.propertyInventory || null;
 
@@ -99,6 +106,7 @@ async function normalizeListing(raw) {
   dto.country = raw.country || (raw.location && raw.location.country) || 'France';
   dto.propertyTypeRaw = raw.transactionType || raw.listingType || raw.adType || raw.offerType || raw.propertyType || raw.type || '';
   dto.propertyKind = raw.propertyKind || raw.category || raw.subtype || raw.type || null;
+  dto.category = (raw.category || '').toLowerCase();
 
   dto.email = (raw.publisher && (raw.publisher.email || raw.publisher.contactEmail)) || raw.contactEmail || null;
   dto.featured = raw.featured != null ? Boolean(raw.featured) : (raw.isFeatured != null ? Boolean(raw.isFeatured) : false);
@@ -212,6 +220,7 @@ async function normalizeListing(raw) {
   dto.origin = raw.origin || null;
   dto.adId = raw.adId || raw.ad_id || null;
   dto.url = raw.url || null;
+  dto.options = Array.isArray(raw.options) ? raw.options : [];
 
   dto.listingStatus = raw.type || raw.status || raw.publicationStatus || null;
 

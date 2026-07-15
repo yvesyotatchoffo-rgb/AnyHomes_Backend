@@ -1,44 +1,68 @@
 /**
  * Admin – Property Attractivity
- * Provides:
- *   GET /admin/property-attractivity/activity-summary   – per-type counts
- *   GET /admin/property-attractivity/activity-logs      – paginated logs
- *   GET /admin/property-attractivity/index              – all properties with Attractivity Index
+ *
+ * Score d'attractivité digitale (0-100) basé sur 3 sous-scores :
+ *   Visibilité (20%), Engagement (30%), Intention (50%)
+ *
+ * Endpoints :
+ *   GET /admin/property-attractivity/activity-summary
+ *   GET /admin/property-attractivity/activity-logs
+ *   GET /admin/property-attractivity/index
  */
 const db = require("../models");
+const mongoose = require("mongoose");
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Normalise x by cap (p95 proxy). Returns 0-1 float. */
 const norm = (x, cap) => (cap > 0 ? Math.min(x / cap, 1) : 0);
 
+const p95 = (arr, key) => {
+  const sorted = [...arr].map((a) => a[key]).sort((a, b) => a - b);
+  const idx = Math.ceil(sorted.length * 0.95) - 1;
+  return sorted[Math.max(0, idx)] || 1;
+};
+
 /**
- * Compute Attractivity Index (0-100 %) for a single property.
+ * Calcule le score d'attractivité (0-100) selon la spec V1.
  *
- * Formula:
- *   raw = Σ(wᵢ × norm(signalᵢ, capᵢ))
- *   age_factor = 1 + 0.1 × e^(-age_days / 30)   [fresh-property bonus, ≤10 %]
- *   index = min(raw × age_factor, 1) × 100
+ * 3 sous-scores :
+ *   - Visibilité (poids 0.20) : views, avg_duration
+ *   - Engagement (poids 0.30) : likes, shares, follows, avg_duration
+ *   - Intention  (poids 0.50) : offers (intérêt explicite), messages, visit_requests
  *
- * Weights  (total = 1.0):
- *   views 0.20 | likes 0.18 | follows 0.17 | offers 0.20
- *   shares 0.10 | visit_requests 0.08 | messages 0.05 | avg_duration 0.02
+ * Normalisation par le 95e percentile de la plateforme.
+ * Bonus de fraîcheur : +10% max, décroissance exponentielle sur 30 jours.
  */
-const computeIndex = (signals, caps, createdAt) => {
-  const WEIGHTS = {
-    views: 0.20,
-    likes: 0.18,
-    follows: 0.17,
-    offers: 0.20,
-    shares: 0.10,
-    visit_requests: 0.08,
-    messages: 0.05,
-    avg_duration: 0.02,
+const computeScore = (signals, caps, createdAt) => {
+  const SCHEMA = {
+    visibility: {
+      weight: 0.20,
+      fields: ["views", "avg_duration"],
+    },
+    engagement: {
+      weight: 0.30,
+      fields: ["likes", "shares", "follows", "revisits"],
+    },
+    intent: {
+      weight: 0.50,
+      fields: ["offers", "messages", "visit_requests"],
+    },
   };
 
-  let raw = 0;
-  for (const [key, w] of Object.entries(WEIGHTS)) {
-    raw += w * norm(signals[key] || 0, caps[key] || 1);
+  let global = 0;
+  const subScores = {};
+
+  for (const [key, group] of Object.entries(SCHEMA)) {
+    let raw = 0;
+    let count = 0;
+    for (const field of group.fields) {
+      const val = signals[field] || 0;
+      const cap = caps[field] || 1;
+      raw += norm(val, cap);
+      count++;
+    }
+    subScores[key] = count > 0 ? (raw / count) * 100 : 0;
+    global += group.weight * (subScores[key] / 100);
   }
 
   const ageDays = Math.max(
@@ -46,21 +70,113 @@ const computeIndex = (signals, caps, createdAt) => {
     1
   );
   const ageFactor = 1 + 0.1 * Math.exp(-ageDays / 30);
-  return Math.min(raw * ageFactor, 1) * 100;
+  const final = Math.min(global * ageFactor, 1) * 100;
+
+  return {
+    global: Math.round(final * 10) / 10,
+    visibility: Math.round(subScores.visibility * 10) / 10,
+    engagement: Math.round(subScores.engagement * 10) / 10,
+    intent: Math.round(subScores.intent * 10) / 10,
+  };
 };
 
-// ─── controllers ────────────────────────────────────────────────────────────
+/**
+ * Agrège les signaux d'attractivité pour un ensemble de propriétés.
+ * Utilise des pipelines d'agrégation MongoDB groupés (pas de boucle N+1).
+ */
+async function aggregateSignals(propertyIds) {
+  if (!propertyIds.length) return {};
+
+  const ids = propertyIds.map((id) =>
+    typeof id === "string" ? new mongoose.Types.ObjectId(id) : id
+  );
+
+  // 1. Signaux depuis propertyActivityLog
+  const logRows = await db.propertyActivityLog.aggregate([
+    { $match: { propertyId: { $in: ids } } },
+    {
+      $group: {
+        _id: "$propertyId",
+        views: { $sum: { $cond: [{ $eq: ["$type", "profile_view"] }, 1, 0] } },
+        shares: { $sum: { $cond: [{ $eq: ["$type", "share"] }, 1, 0] } },
+        messages: { $sum: { $cond: [{ $eq: ["$type", "contact_owner"] }, 1, 0] } },
+        visit_requests: { $sum: { $cond: [{ $eq: ["$type", "visit_request"] }, 1, 0] } },
+        total_duration: {
+          $sum: {
+            $cond: [
+              { $and: [{ $eq: ["$type", "profile_view"] }, { $gt: ["$duration", 0] }] },
+              "$duration", 0,
+            ],
+          },
+        },
+        view_count_for_duration: { $sum: { $cond: [{ $gt: ["$duration", 0] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  const signalMap = {};
+  for (const row of logRows) {
+    signalMap[String(row._id)] = {
+      views: row.views || 0,
+      shares: row.shares || 0,
+      messages: row.messages || 0,
+      visit_requests: row.visit_requests || 0,
+      revisits: 0,
+      avg_duration: row.view_count_for_duration > 0
+        ? row.total_duration / row.view_count_for_duration : 0,
+    };
+  }
+
+  // 2. Likes via aggregation groupée sur favorites
+  if (ids.length > 0) {
+    const likeRows = await db.favorites.aggregate([
+      { $match: { property_id: { $in: ids }, like: true, isDeleted: false } },
+      { $group: { _id: "$property_id", count: { $sum: 1 } } },
+    ]);
+    for (const row of likeRows) {
+      const sid = String(row._id);
+      if (!signalMap[sid]) signalMap[sid] = {};
+      signalMap[sid].likes = row.count;
+    }
+  }
+
+  // 3. Follows via aggregation groupée sur followUnfollow
+  if (ids.length > 0) {
+    const followRows = await db.followUnfollow.aggregate([
+      { $match: { property_id: { $in: ids }, follow_unfollow: true, isDeleted: false } },
+      { $group: { _id: "$property_id", count: { $sum: 1 } } },
+    ]);
+    for (const row of followRows) {
+      const sid = String(row._id);
+      if (!signalMap[sid]) signalMap[sid] = {};
+      signalMap[sid].follows = row.count;
+    }
+  }
+
+  // 4. Intérêts via aggregation groupée sur interests
+  if (ids.length > 0) {
+    const offerRows = await db.interests.aggregate([
+      { $match: { propertyId: { $in: ids }, isDeleted: false } },
+      { $group: { _id: "$propertyId", count: { $sum: 1 } } },
+    ]);
+    for (const row of offerRows) {
+      const sid = String(row._id);
+      if (!signalMap[sid]) signalMap[sid] = {};
+      signalMap[sid].offers = row.count;
+    }
+  }
+
+  return signalMap;
+}
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
 
 module.exports = {
-
   /**
    * GET /admin/property-attractivity/activity-summary
-   * Returns total counts per event type across all properties.
-   * Like / follow counts come from their authoritative collections.
    */
   activitySummary: async (req, res) => {
     try {
-      // Counts from propertyActivityLog (all types except like/follow)
       const rows = await db.propertyActivityLog.aggregate([
         { $group: { _id: "$type", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
@@ -68,7 +184,6 @@ module.exports = {
       const summary = {};
       for (const r of rows) summary[r._id] = r.count;
 
-      // Overwrite like/follow/offer_sent with authoritative source counts
       const [likeCount, followCount, offerCount] = await Promise.all([
         db.favorites.countDocuments({ like: true, isDeleted: false }),
         db.followUnfollow.countDocuments({ follow_unfollow: true, isDeleted: false }),
@@ -78,7 +193,6 @@ module.exports = {
       summary.follow = followCount;
       summary.offer_sent = offerCount;
 
-      // Ensure all display types are present
       const defaultTypes = [
         "profile_view", "like", "unlike", "follow", "unfollow",
         "share", "contact_owner", "visit_request", "offer_sent",
@@ -95,113 +209,54 @@ module.exports = {
 
   /**
    * GET /admin/property-attractivity/activity-logs
-   * Paginated list of activity entries.
-   * For type=like  → queries favorites collection
-   * For type=follow → queries followunfollows collection
-   * Otherwise      → queries propertyActivityLog
    */
   activityLogs: async (req, res) => {
     try {
       const { type, propertyId, userId, page = 1, count = 20 } = req.query;
       const skip = (Number(page) - 1) * Number(count);
 
-      // ── Like tab → favorites ───────────────────────────────────────────
       if (type === "like") {
         const q = { like: true, isDeleted: false };
         if (propertyId) q.property_id = propertyId;
         if (userId) q.user_id = userId;
-
         const [total, rows] = await Promise.all([
           db.favorites.countDocuments(q),
-          db.favorites
-            .find(q)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(Number(count))
+          db.favorites.find(q).sort({ createdAt: -1 }).skip(skip).limit(Number(count))
             .populate("user_id", "firstName lastName fullName image email")
-            .populate("property_id", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy")
-            .lean(),
+            .populate("property_id", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy").lean(),
         ]);
-
-        const data = rows.map((r) => ({
-          _id: r._id,
-          type: "like",
-          createdAt: r.createdAt,
-          userId: r.user_id,
-          propertyId: r.property_id,
-          duration: null,
-          sectionVisited: null,
-          phoneRevealed: null,
-        }));
+        const data = rows.map((r) => ({ _id: r._id, type: "like", createdAt: r.createdAt, userId: r.user_id, propertyId: r.property_id }));
         return res.status(200).json({ success: true, total, data });
       }
 
-      // ── Follow tab → followunfollows ───────────────────────────────────
       if (type === "follow") {
         const q = { follow_unfollow: true, isDeleted: false };
         if (propertyId) q.property_id = propertyId;
         if (userId) q.user_id = userId;
-
         const [total, rows] = await Promise.all([
           db.followUnfollow.countDocuments(q),
-          db.followUnfollow
-            .find(q)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(Number(count))
+          db.followUnfollow.find(q).sort({ createdAt: -1 }).skip(skip).limit(Number(count))
             .populate("user_id", "firstName lastName fullName image email")
-            .populate("property_id", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy")
-            .lean(),
+            .populate("property_id", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy").lean(),
         ]);
-
-        const data = rows.map((r) => ({
-          _id: r._id,
-          type: "follow",
-          createdAt: r.createdAt,
-          userId: r.user_id,
-          propertyId: r.property_id,
-          duration: null,
-          sectionVisited: null,
-          phoneRevealed: null,
-        }));
+        const data = rows.map((r) => ({ _id: r._id, type: "follow", createdAt: r.createdAt, userId: r.user_id, propertyId: r.property_id }));
         return res.status(200).json({ success: true, total, data });
       }
 
-      // ── Offer/Interest tab → interests collection ──────────────────────
       if (type === "offer_sent") {
         const q = { isDeleted: false };
         if (propertyId) q.propertyId = propertyId;
         if (userId) q.buyerId = userId;
-
         const [total, rows] = await Promise.all([
           db.interests.countDocuments(q),
-          db.interests
-            .find(q)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(Number(count))
+          db.interests.find(q).sort({ createdAt: -1 }).skip(skip).limit(Number(count))
             .populate("buyerId", "firstName lastName fullName image email")
-            .populate("propertyId", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy")
-            .lean(),
+            .populate("propertyId", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy").lean(),
         ]);
-
-        const data = rows.map((r) => ({
-          _id: r._id,
-          type: "offer_sent",
-          createdAt: r.createdAt,
-          userId: r.buyerId,
-          propertyId: r.propertyId,
-          label: r.interestType || r.funnelStatus,
-          makeOfferAmount: r.makeOfferAmount,
-          funnelStatus: r.funnelStatus,
-          duration: null,
-          sectionVisited: null,
-          phoneRevealed: null,
-        }));
+        const data = rows.map((r) => ({ _id: r._id, type: "offer_sent", createdAt: r.createdAt, userId: r.buyerId, propertyId: r.propertyId, label: r.interestType || r.funnelStatus, makeOfferAmount: r.makeOfferAmount }));
         return res.status(200).json({ success: true, total, data });
       }
 
-      // ── All other types → propertyActivityLog ─────────────────────────
       const query = {};
       if (type) query.type = type;
       if (propertyId) query.propertyId = propertyId;
@@ -209,17 +264,9 @@ module.exports = {
 
       const [total, logs] = await Promise.all([
         db.propertyActivityLog.countDocuments(query),
-        db.propertyActivityLog
-          .find(query)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(Number(count))
+        db.propertyActivityLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(count))
           .populate("userId", "firstName lastName fullName image email")
-          .populate(
-            "propertyId",
-            "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy"
-          )
-          .lean(),
+          .populate("propertyId", "propertyTitle address zipcode city images propertyType price propertyMonthlyCharges status addedBy").lean(),
       ]);
 
       return res.status(200).json({ success: true, total, data: logs });
@@ -230,28 +277,17 @@ module.exports = {
 
   /**
    * GET /admin/property-attractivity/index
-   * Returns all properties with computed Attractivity Index.
-   *
-   * Query params:
-   *   search       – property title / address / zipcode
-   *   status       – active | deactive
-   *   propertyType – sale | rent | offmarket
-   *   page         – default 1
-   *   count        – default 20
-   *   sortBy       – attractivityIndex_desc (default) | attractivityIndex_asc | createdAt_desc
+   * Retourne tous les biens avec leur score d'attractivité calculé selon la spec V1.
    */
   attractivityIndex: async (req, res) => {
     try {
       const {
-        search,
-        status,
-        propertyType,
-        page = 1,
-        count = 20,
+        search, status, propertyType,
+        page = 1, count = 20,
         sortBy = "attractivityIndex_desc",
       } = req.query;
 
-      // ── Build property filter ──────────────────────────────────────────
+      // Filtre
       const filter = { isDeleted: false };
       if (status) filter.status = status;
       if (propertyType) filter.propertyType = propertyType;
@@ -264,13 +300,21 @@ module.exports = {
         ];
       }
 
-      // ── Fetch all matching properties (no limit yet — need to rank by index) ─
+      // Compter le total (rapide — utilise l'index MongoDB)
+      const total = await db.property.countDocuments(filter);
+      if (total === 0) {
+        return res.status(200).json({ success: true, total: 0, data: [] });
+      }
+
+      // Ne charger QUE la page demandée (pas les 392k biens)
+      const skip = (Number(page) - 1) * Number(count);
       const properties = await db.property
         .find(filter)
-        .select(
-          "_id propertyTitle address zipcode city status propertyType price propertyMonthlyCharges surface images addedBy createdAt"
-        )
+        .select("_id propertyTitle address zipcode city status propertyType price propertyMonthlyCharges surface images addedBy createdAt lifecycleStatus")
         .populate("addedBy", "firstName lastName fullName image email")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(count))
         .lean();
 
       if (!properties.length) {
@@ -279,131 +323,64 @@ module.exports = {
 
       const propertyIds = properties.map((p) => p._id);
 
-      // ── Aggregate signals per property ────────────────────────────────
-      const signalRows = await db.propertyActivityLog.aggregate([
-        { $match: { propertyId: { $in: propertyIds } } },
-        {
-          $group: {
-            _id: "$propertyId",
-            views: {
-              $sum: { $cond: [{ $eq: ["$type", "profile_view"] }, 1, 0] },
-            },
-            likes: {
-              $sum: { $cond: [{ $eq: ["$type", "like"] }, 1, 0] },
-            },
-            follows: {
-              $sum: { $cond: [{ $eq: ["$type", "follow"] }, 1, 0] },
-            },
-            shares: {
-              $sum: { $cond: [{ $eq: ["$type", "share"] }, 1, 0] },
-            },
-            offers: {
-              $sum: { $cond: [{ $eq: ["$type", "offer_sent"] }, 1, 0] },
-            },
-            visit_requests: {
-              $sum: { $cond: [{ $eq: ["$type", "visit_request"] }, 1, 0] },
-            },
-            messages: {
-              $sum: { $cond: [{ $eq: ["$type", "contact_owner"] }, 1, 0] },
-            },
-            // avg duration for profile views that have a duration
-            avg_duration: {
-              $avg: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "profile_view"] },
-                      { $gt: ["$duration", 0] },
-                    ],
-                  },
-                  "$duration",
-                  null,
-                ],
-              },
-            },
-          },
-        },
-      ]);
+      // Agrégation des signaux POUR LA PAGE UNIQUEMENT
+      const signalMap = await aggregateSignals(propertyIds);
 
-      // map by propertyId
-      const signalMap = {};
-      for (const row of signalRows) {
-        signalMap[String(row._id)] = row;
-      }
-
-      // ── Compute 95th-percentile caps across this dataset ─────────────
+      // Caps calculés sur les biens de la page (approximation suffisante pour l'admin)
       const allSignals = properties.map((p) => {
         const s = signalMap[String(p._id)] || {};
         return {
-          views: s.views || 0,
-          likes: s.likes || 0,
-          follows: s.follows || 0,
-          shares: s.shares || 0,
-          offers: s.offers || 0,
-          visit_requests: s.visit_requests || 0,
-          messages: s.messages || 0,
-          avg_duration: s.avg_duration || 0,
+          views: s.views || 0, likes: s.likes || 0, follows: s.follows || 0,
+          shares: s.shares || 0, offers: s.offers || 0,
+          visit_requests: s.visit_requests || 0, messages: s.messages || 0,
+          avg_duration: s.avg_duration || 0, revisits: s.revisits || 0,
         };
       });
-
-      const p95 = (arr, key) => {
-        const sorted = [...arr].map((a) => a[key]).sort((a, b) => a - b);
-        const idx = Math.ceil(sorted.length * 0.95) - 1;
-        return sorted[Math.max(0, idx)] || 1;
-      };
 
       const caps = {
-        views: p95(allSignals, "views"),
-        likes: p95(allSignals, "likes"),
-        follows: p95(allSignals, "follows"),
-        shares: p95(allSignals, "shares"),
-        offers: p95(allSignals, "offers"),
-        visit_requests: p95(allSignals, "visit_requests"),
-        messages: p95(allSignals, "messages"),
-        avg_duration: p95(allSignals, "avg_duration"),
+        views: p95(allSignals, "views"), likes: p95(allSignals, "likes"),
+        follows: p95(allSignals, "follows"), shares: p95(allSignals, "shares"),
+        offers: p95(allSignals, "offers"), visit_requests: p95(allSignals, "visit_requests"),
+        messages: p95(allSignals, "messages"), avg_duration: p95(allSignals, "avg_duration"),
+        revisits: p95(allSignals, "revisits"),
       };
 
-      // ── Build result with index ────────────────────────────────────────
-      const withIndex = properties.map((p) => {
+      // Calcul du score pour chaque bien de la page
+      const withScore = properties.map((p) => {
         const s = signalMap[String(p._id)] || {};
         const signals = {
-          views: s.views || 0,
-          likes: s.likes || 0,
-          follows: s.follows || 0,
-          shares: s.shares || 0,
-          offers: s.offers || 0,
-          visit_requests: s.visit_requests || 0,
-          messages: s.messages || 0,
-          avg_duration: s.avg_duration || 0,
+          views: s.views || 0, likes: s.likes || 0, follows: s.follows || 0,
+          shares: s.shares || 0, offers: s.offers || 0,
+          visit_requests: s.visit_requests || 0, messages: s.messages || 0,
+          avg_duration: s.avg_duration || 0, revisits: s.revisits || 0,
         };
         const ageDays = Math.max(
-          (Date.now() - new Date(p.createdAt).getTime()) / (1000 * 60 * 60 * 24),
-          1
+          (Date.now() - new Date(p.createdAt).getTime()) / (1000 * 60 * 60 * 24), 1
         );
+        const score = computeScore(signals, caps, p.createdAt);
         return {
-          ...p,
-          signals,
-          ageDays: Math.round(ageDays),
-          attractivityIndex: Math.round(computeIndex(signals, caps, p.createdAt) * 10) / 10,
+          ...p, signals, ageDays: Math.round(ageDays),
+          attractivityIndex: score.global,
+          visibilityScore: score.visibility,
+          engagementScore: score.engagement,
+          intentScore: score.intent,
         };
       });
 
-      // ── Sort ──────────────────────────────────────────────────────────
+      // Tri local (dans les limites de la page)
       if (sortBy === "attractivityIndex_asc") {
-        withIndex.sort((a, b) => a.attractivityIndex - b.attractivityIndex);
-      } else if (sortBy === "createdAt_desc") {
-        withIndex.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        withScore.sort((a, b) => a.attractivityIndex - b.attractivityIndex);
+      } else if (sortBy === "visibility_desc") {
+        withScore.sort((a, b) => b.visibilityScore - a.visibilityScore);
+      } else if (sortBy === "engagement_desc") {
+        withScore.sort((a, b) => b.engagementScore - a.engagementScore);
+      } else if (sortBy === "intent_desc") {
+        withScore.sort((a, b) => b.intentScore - a.intentScore);
       } else {
-        // default: attractivityIndex_desc
-        withIndex.sort((a, b) => b.attractivityIndex - a.attractivityIndex);
+        withScore.sort((a, b) => b.attractivityIndex - a.attractivityIndex);
       }
 
-      // ── Paginate ──────────────────────────────────────────────────────
-      const total = withIndex.length;
-      const skip = (Number(page) - 1) * Number(count);
-      const paginated = withIndex.slice(skip, skip + Number(count));
-
-      return res.status(200).json({ success: true, total, data: paginated, caps });
+      return res.status(200).json({ success: true, total, data: withScore, caps });
     } catch (err) {
       console.error("[attractivityIndex]", err);
       return res.status(500).json({ success: false, message: err.message });

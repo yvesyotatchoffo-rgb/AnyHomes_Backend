@@ -131,7 +131,7 @@ module.exports = (agenda, db) => {
       console.error("Coach: Error in cleanup-old-records job:", err);
     }
   });
-  agenda.daily("2:00 am", "coach.cleanup-old-records");
+  agenda.every("24 hours", "coach.cleanup-old-records");
 
   // ─ Image downloader job ──────────────────────────────────────────────────────
   // Downloads queued images from MoteurImmo source URLs to public/img/ and updates
@@ -153,6 +153,14 @@ module.exports = (agenda, db) => {
   } catch (err) {
     console.error("Failed to load image downloader job:", err);
   }
+  // ─ MoteurImmo status check ────────────────────────────────────────────────
+  try {
+    require("../../cron/moteurimmoStatusCheck.cron")(agenda);
+    console.log("MoteurImmo status check job scheduled (every hour).");
+  } catch (err) {
+    console.error("Failed to load MoteurImmo status check job:", err);
+  }
+
   //// agenda to delete the unused records
   //   agenda.define("cleanup-agenda-jobs", async () => {
   //   try {

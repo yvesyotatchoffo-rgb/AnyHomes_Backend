@@ -8,6 +8,7 @@ router.get("/admin/activity/:id", adminAuth, adminProperty.adminActivity);
 router.get("/activity-stats/:id", property.getActivityStats);
 router.post("/add", property.add);
 router.get("/detail", property.details);
+router.get("/map-markers", property.mapMarkers);
 router.get("/listing", property.listing);
 router.put("/statusChange", property.statusChange);
 router.delete("/deleteProperty", property.delete);

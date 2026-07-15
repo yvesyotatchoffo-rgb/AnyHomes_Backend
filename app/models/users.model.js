@@ -26,6 +26,7 @@ module.exports = (mongoose) => {
         type: String,
       },
       isOnline: { type: Boolean },
+      language: { type: String, default: 'fr', enum: ['fr', 'en'] },
 
       amenities: [{ type: Schema.Types.ObjectId, ref: "amenities" }],
       images: Array,

@@ -335,6 +335,63 @@ const buildGuestProperties = (req) => {
 };
 
 module.exports = {
+  /**
+   * GET /property/map-markers
+   * Retourne un échantillon de biens répartis sur tout le territoire
+   * pour affichage sur la carte. Utilise $sample pour la distribution.
+   */
+  mapMarkers: (() => {
+    const cache = {};
+    const cacheTime = {};
+    const CACHE_TTL = 10 * 60 * 1000;
+
+    return async (req, res) => {
+      try {
+        const count = Math.min(Number(req.query.count) || 500, 2000);
+        const key = String(count);
+
+        if (cache[key] && Date.now() - cacheTime[key] < CACHE_TTL) {
+          return res.status(200).json({ success: true, data: cache[key] });
+        }
+
+        // IMPORTANT: $sample MUST be the FIRST stage to use MongoDB's fast
+        // pseudo-random cursor (O(1)). Moving $match after $sample means we
+        // over-sample then filter, which is still fast since we only inspect ~5×count docs.
+        const markers = await db.property.aggregate([
+          { $sample: { size: count * 5 } }, // over-sample to account for missing coordinates
+          { $project: {
+              _id: 1,
+              isDeleted: 1,
+              propertyTitle: 1,
+              city: 1,
+              zipcode: 1,
+              price: 1,
+              propertyType: 1,
+              images: { $slice: ["$images", 1] },
+              location: {
+                lat: { $arrayElemAt: ["$newlocation.coordinates", 1] },
+                lng: { $arrayElemAt: ["$newlocation.coordinates", 0] },
+              },
+              exactLocation: true,
+          }},
+          { $match: {
+              isDeleted: false,
+              'location.lat': { $nin: [null, 0] },
+              'location.lng': { $nin: [null, 0] },
+          }},
+          { $limit: count },
+        ]);
+
+        cache[key] = markers;
+        cacheTime[key] = Date.now();
+
+        return res.status(200).json({ success: true, data: markers });
+      } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+      }
+    };
+  })(),
+
   add: async (req, res) => {
     const data = req.body;
     try {
@@ -418,10 +475,17 @@ module.exports = {
         })
       }
 
+      const owner = await db.users.findById(req.identity.id, 'fullName firstName lastName companyName').lean();
+      const agencyName = owner?.companyName || [owner?.firstName, owner?.lastName].filter(Boolean).join(' ') || owner?.fullName || null;
       const createTimeline = await db.timeline.create({
         propertyId: property._id,
         addedBy: req.identity.id,
         type: "propertyCreated",
+        meta: {
+          statusBadge: property.propertyType || 'sale',
+          price: data.price || null,
+          agencyName,
+        },
       })
 
       logActivity(req.identity.id, "property_create", { label: "Bien publié", objectType: "property", objectId: property._id, objectTitle: data.propertyTitle || "" });
@@ -647,6 +711,47 @@ module.exports = {
       data.isInterested = isInterested;
       data.totalInquries = findInqiries;
 
+      // ── Normalize location coordinates for frontend ─────────────────────
+      // Frontend expects location.lat / location.lng, but MoteurImmo stores
+      // coordinates as [lon, lat] arrays. Convert to the expected format.
+      // Only set if not already present (no regression for existing properties).
+      if (!data.propertyDetail.location?.lat && data.propertyDetail.newlocation?.coordinates) {
+        const [lon, lat] = data.propertyDetail.newlocation.coordinates;
+        data.propertyDetail.location = {
+          ...(data.propertyDetail.location || {}),
+          lat,
+          lng: lon,
+        };
+        data.propertyDetail.exactLocation = true;
+      } else if (!data.propertyDetail.location?.lat && data.propertyDetail.location?.coordinates) {
+        const [lon, lat] = data.propertyDetail.location.coordinates;
+        data.propertyDetail.location = { ...data.propertyDetail.location, lat, lng: lon };
+        data.propertyDetail.exactLocation = true;
+      }
+
+      // ── Enrich with MoteurImmo external listing data ───────────────────
+      if (data.propertyDetail.importBy === "platform") {
+        const externalListing = await db.externalListing
+          .findOne({ propertyId: id, source: "moteurimmo" })
+          .lean();
+        if (externalListing) {
+          data.propertyDetail.source = "moteurimmo";
+          data.propertyDetail.externalUrl = externalListing.raw?.url || null;
+          data.propertyDetail.publisher = externalListing.raw?.publisher || null;
+
+          // Fetch latest market exit reason from timeline
+          const lastEvent = await db.timeline
+            .findOne({ propertyId: id, type: "moteurimmoLeavingMarket" })
+            .sort({ createdAt: -1 })
+            .lean();
+          if (lastEvent?.meta) {
+            data.propertyDetail.moteurimmoStatusReason = lastEvent.meta.reason || null;
+            data.propertyDetail.moteurimmoLastPrice = lastEvent.meta.lastPrice || null;
+          }
+
+        }
+      }
+
       // Sollicitations composite metric
       const [solicitSoftOffers, solicitFormalOffers, solicitMessages, solicitPhoneReveals, solicitVisits] = await Promise.all([
         db.interests.countDocuments({ propertyId: id, isDeleted: false, interestType: "interest sent" }),
@@ -756,35 +861,15 @@ module.exports = {
       // let loggedInUserId = req.identity.id;
       if (search) {
         const searchTerms = search.split(" / ").map((term) => term.trim());
-        query = {
-          $or: []
-        };
 
-        searchTerms.forEach((fullAddress) => {
+        // Use $text search for performance (uses the text index on city/address/state/country/zipcode)
+        // Extract the city part (before first comma) for each term to avoid false positives from "France"
+        const textQuery = searchTerms.map((term) => {
+          const cityPart = term.split(",")[0].trim();
+          return cityPart || term;
+        }).join(" ");
 
-          query.$or.push({
-            address: {
-              $regex: fullAddress,
-              $options: "i"
-            }
-          }, {
-            state: {
-              $regex: fullAddress,
-              $options: "i"
-            }
-          }, {
-            country: {
-              $regex: fullAddress,
-              $options: "i"
-            }
-          }, {
-            city: {
-              $regex: fullAddress,
-              $options: "i"
-            }
-          });
-        });
-
+        query.$text = { $search: textQuery };
       }
       if (nameSearch) {
         query.propertyTitle = {
@@ -1295,6 +1380,7 @@ module.exports = {
             id: "$_id",
             email: 1,
             location: 1,
+            newlocation: 1,
             distance: 1,
             address: 1,
             state: 1,
@@ -1475,6 +1561,9 @@ module.exports = {
           },
           location: {
             $first: "$location"
+          },
+          newlocation: {
+            $first: "$newlocation"
           },
           address: {
             $first: "$address"
@@ -1792,6 +1881,7 @@ module.exports = {
           zipcode: 1,
           price: 1,
           loyer: 1,
+          propertyMonthlyCharges: 1,
           status: 1,
           images: { $slice: 1 },
           createdAt: 1,
@@ -1799,6 +1889,7 @@ module.exports = {
           propertyType: 1,
           proposal: 1,
           location: 1,
+          newlocation: 1,
           exactLocation: 1,
           randomLocation: 1,
           offMarket: 1,
@@ -1807,20 +1898,33 @@ module.exports = {
 
         const total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
         const skipNo = (pageNumber - 1) * pageSize;
+        // When using $text search, skip createdAt sort (forces 6000+ doc in-memory sort → slow)
+        // MongoDB returns $text results ordered by relevance by default, which is better UX anyway
+        const fastPathSort = (query.$text && !sortBy) ? {} : sortquery;
         const docs = await Property.find({ ...query, ...financingProbabilityMatch })
           .select(projection)
-          .sort(sortquery)
+          .sort(fastPathSort)
           .skip(skipNo)
           .limit(Number(pageSize))
           .populate('addedBy', 'firstName lastName fullName image accountType companyLogo featuredProfilePhoto username companyName')
           .lean();
 
         // Normalise: expose populated user as addedBy_details
-        const docsWithOwner = docs.map(d => ({
-          ...d,
-          addedBy_details: d.addedBy && typeof d.addedBy === 'object' ? d.addedBy : {},
-          addedBy: d.addedBy?._id || d.addedBy,
-        }));
+        const docsWithOwner = docs.map(d => {
+          // Transform newlocation.coordinates → location.lat/lng if not already present
+          if (d.newlocation?.coordinates && !d.location?.lat) {
+            d.location = {
+              ...(d.location || {}),
+              lat: d.newlocation.coordinates[1],
+              lng: d.newlocation.coordinates[0],
+            };
+          }
+          return {
+            ...d,
+            addedBy_details: d.addedBy && typeof d.addedBy === 'object' ? d.addedBy : {},
+            addedBy: d.addedBy?._id || d.addedBy,
+          };
+        });
 
         // Fast-path: no logged-in user → tag all off-market as blurred_no_account
         const processedDocs = docsWithOwner.map(d => {
@@ -1895,6 +1999,27 @@ module.exports = {
         total = filteredResults.length;
         result = filteredResults.slice(skipNo, skipNo + pageSize);
       } else {
+        // Normalize newlocation.coordinates → location.lat/lng for frontend map
+        // Only adds lat/lng if newlocation exists and location.lat is not already set
+        pipeline.push({
+          $addFields: {
+            location: {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$newlocation", null] },
+                    { $eq: [{ $ifNull: ["$location.lat", null] }, null] },
+                  ],
+                },
+                then: {
+                  lat: { $arrayElemAt: ["$newlocation.coordinates", 1] },
+                  lng: { $arrayElemAt: ["$newlocation.coordinates", 0] },
+                },
+                else: "$location",
+              },
+            },
+          },
+        });
         if (!earlyPaginate) {
           pipeline.push({
             $skip: Number(skipNo),
@@ -3114,6 +3239,53 @@ module.exports = {
       if (updateFields.hasOwnProperty('sellerFiles')) {
         const hasSellerFiles = updateFields.sellerFiles && Object.keys(updateFields.sellerFiles).length > 0;
         updateFields.identityVerified = hasSellerFiles;
+      }
+
+      // ── Timeline : détecter les nouveaux éléments ajoutés ──────────────
+      const userId = req.identity.id;
+      const now = new Date();
+
+      // Dépenses
+      if (Array.isArray(updateFields.Expenses) && updateFields.Expenses.length > (property.Expenses || []).length) {
+        const newExpenses = updateFields.Expenses.slice((property.Expenses || []).length);
+        for (const exp of newExpenses) {
+          await db.timeline.create({
+            propertyId, addedBy: userId, type: 'expenseAdded', createdAt: now, updatedAt: now,
+            meta: {
+              amount: exp.price || null,
+              label: exp.label || null,
+            },
+          });
+        }
+      }
+
+      // Travaux de rénovation
+      if (Array.isArray(updateFields.renovation_work) && updateFields.renovation_work.length > (property.renovation_work || []).length) {
+        const newWorks = updateFields.renovation_work.slice((property.renovation_work || []).length);
+        for (const work of newWorks) {
+          await db.timeline.create({
+            propertyId, addedBy: userId, type: 'renovationAdded', createdAt: now, updatedAt: now,
+            meta: {
+              amount: work.price || null,
+              title: work.title || null,
+              imagesCount: (work.images || []).length,
+            },
+          });
+        }
+      }
+
+      // Évaluations externes
+      if (Array.isArray(updateFields.rating) && updateFields.rating.length > (property.rating || []).length) {
+        const newRatings = updateFields.rating.slice((property.rating || []).length);
+        for (const rtg of newRatings) {
+          await db.timeline.create({
+            propertyId, addedBy: userId, type: 'externalRating', createdAt: now, updatedAt: now,
+            meta: {
+              value: rtg.rating_value || null,
+              platform: rtg.type || null,
+            },
+          });
+        }
       }
 
       const updated = await Property.updateOne({

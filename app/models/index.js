@@ -94,4 +94,7 @@ db.CoachMessageHistory = require("./coachMessageHistory.model.js")(mongoose)
 // Import Runs (MoteurImmo, etc.)
 db.importRun = require("./importRun.model.js")(mongoose)
 
+// Agency reveal tracking (MoteurImmo)
+db.agencyReveal = require("./agencyReveal.model.js")(mongoose)
+
 module.exports = db;

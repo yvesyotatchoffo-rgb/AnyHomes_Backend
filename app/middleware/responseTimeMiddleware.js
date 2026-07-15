@@ -1,5 +1,10 @@
 // responseTimeMiddleware.js
 const responseTimeMiddleware = (req, res, next) => {
+    // Skip logging for static assets to avoid log spam
+    if (req.originalUrl && req.originalUrl.startsWith('/img/')) {
+      return next();
+    }
+
     const start = Date.now();
     
     res.on('finish', () => {

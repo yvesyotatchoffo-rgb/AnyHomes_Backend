@@ -7,7 +7,7 @@ module.exports = (mongoose) => {
         oldPrice: { type: Number },
         propertyId: {type: Schema.Types.ObjectId, ref: "properties", index: true },
         propertyType: { type: String },
-        type: { type: String, enum: ["newPrice", "priceChanged", "propertyType", "revenue_detail", "propertyMonthlyCharges", "proposal", "ownerChange", "interestStatus", "renterInterestStatus", "photosAdded", "statusChanged", "propertyCreated"] },
+        type: { type: String, enum: ["newPrice", "priceChanged", "propertyType", "revenue_detail", "expenseAdded", "renovationAdded", "externalRating", "propertyMonthlyCharges", "proposal", "ownerChange", "interestStatus", "renterInterestStatus", "photosAdded", "statusChanged", "propertyCreated", "moteurimmoLeavingMarket"] },
         addedBy: { type: Schema.Types.ObjectId, ref: "users", index: true },
         revenue_detail: { type: Array },
         meta: { type: Schema.Types.Mixed },

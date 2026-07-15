@@ -77,6 +77,7 @@ module.exports = {
     "/users/claim/venue/detail",
     "/user/auto/login",
     "/user/verifyOtp",
+    "/property/map-markers",
     "/property/listing",
     "/property/detail",
     "/revenue/listing",

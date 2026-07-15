@@ -2,6 +2,7 @@ const moteuService = require('../../services/moteurimmo.service');
 const { normalizeListing } = require('./normalizer');
 const db = require('../../models');
 const config = require('../../config/moteurimmo.config');
+const { sendEmail } = require('../../config/brevo.config');
 const fs = require('fs');
 const path = require('path');
 const sanitize = require('sanitize-filename');
@@ -98,7 +99,9 @@ function inferPropertyStatus(listingStatus) {
 }
 
 function buildPropertyPayload(dto, userId) {
-  const propertyType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+  // If the listing has a deletionDate, it's no longer on the market → import as directory
+  const inferredType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+  const propertyType = dto.deletionDate ? 'directory' : inferredType;
   const propertyKind = inferPropertyKind(dto.propertyKind || dto.propertyTitle || dto.origin || dto.listingStatus);
 
   return {
@@ -207,6 +210,14 @@ async function upsertListing(raw) {
     return null;
   }
 
+  // Skip non-residential categories (office, premises, shop, block, land, parking/garage/box, misc)
+  const RESIDENTIAL_CATEGORIES = ['house', 'flat'];
+  const adCategory = dto.category || '';
+  if (!RESIDENTIAL_CATEGORIES.includes(adCategory)) {
+    console.log(`  [SKIP] Non-residential category "${adCategory}" for "${(dto.propertyTitle || '').slice(0, 60)}"`);
+    return null;
+  }
+
   let existing = await db.externalListing.findOne({ source, sourceId });
 
   const sysUser = await db.users.findOne({ email: 'system_anyhomes_importer@anyhomes.local' });
@@ -245,7 +256,8 @@ async function upsertListing(raw) {
       if (dto.position) updates.newlocation = dto.position;
       const newType = inferPropertyKind(dto.propertyKind || dto.propertyTitle || dto.origin || dto.listingStatus);
       if (newType && newType !== prop.type) updates.type = newType;
-      const newPropertyType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+      const inferredPT = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+      const newPropertyType = dto.deletionDate ? 'directory' : inferredPT;
       if (newPropertyType && newPropertyType !== prop.propertyType) updates.propertyType = newPropertyType;
       const mappedStatus = inferPropertyStatus(dto.listingStatus);
       if (mappedStatus !== prop.status) updates.status = mappedStatus;
@@ -335,8 +347,30 @@ async function upsertListing(raw) {
     throw err;
   }
 
-  // timeline
-  await createTimelineIfNeeded(property._id, userId, 'propertyCreated', { source, sourceId });
+  // timeline — enriched with status, price and agency
+  const inferredType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+  const propType = dto.deletionDate ? 'directory' : inferredType;
+  await createTimelineIfNeeded(property._id, userId, 'propertyCreated', {
+    source,
+    sourceId,
+    statusBadge: propType,
+    price: dto.price,
+    agencyName: (dto.publisher && dto.publisher.name) || dto.username || null,
+  });
+
+  // If the ad was already deleted when imported, record it in the timeline
+  if (dto.deletionDate) {
+    const opts = dto.options || [];
+    let reason = 'removed';
+    if (opts.includes('isSoldRented')) reason = 'soldRented';
+    else if (opts.includes('isUnderCompromise')) reason = 'underCompromise';
+    await createTimelineIfNeeded(property._id, userId, 'moteurimmoLeavingMarket', {
+      reason,
+      lastPrice: dto.price,
+      agencyName: dto.publisher?.name || null,
+      statusBadge: 'directory',
+    });
+  }
 
   return property._id;
 }
@@ -367,38 +401,63 @@ async function finalizeRun(runId, error) {
   const run = await db.importRun.findById(runId);
   if (!run) return;
   const duration = Math.round((new Date() - run.startDate) / 1000);
+  const status = error ? 'failed' : 'completed';
   await db.importRun.findByIdAndUpdate(runId, {
     $set: {
       endDate: new Date(),
       duration,
-      status: error ? 'failed' : 'completed',
+      status,
       error: error || undefined,
     },
   });
+
+  if (status === 'failed' && process.env.MOTEURIMMO_NOTIFY_EMAIL) {
+    try {
+      await sendEmail({
+        module: 'AUTH',
+        to: process.env.MOTEURIMMO_NOTIFY_EMAIL,
+        subject: `[AnyHomes] Échec sync MoteurImmo — ${run.runRef}`,
+        htmlContent: `<h2>Sync MoteurImmo échoué</h2>
+<p>Le run <strong>${run.runRef}</strong> (source: ${run.source}) a échoué.</p>
+<p><strong>Erreur :</strong> ${error || 'N/A'}</p>
+<p><strong>Début :</strong> ${run.startDate?.toISOString() || 'N/A'}</p>
+<p><strong>Durée :</strong> ${duration}s</p>
+<p>Consultez le dashboard admin pour plus de détails.</p>`,
+      });
+    } catch (emailErr) {
+      console.error('Failed to send failure notification email:', emailErr.message);
+    }
+  }
 }
 
 // ── Run with tracking ────────────────────────────────────────────────────────
 
-async function runOnce({ page = 1, pageSize = config.defaultPageSize } = {}) {
+async function runOnce({ page = 1, pageSize = config.defaultPageSize, maxPages = config.maxSyncPages } = {}) {
   const run = await createRun();
   const runId = run._id;
+  let totalProcessed = 0;
   try {
-    const params = { page, pageSize };
-    const data = await moteuService.fetchListings(params);
-    const listings = data && (data.items || data.listings || data) ? (data.items || data.listings || (Array.isArray(data) ? data : [])) : [];
-    for (let raw of listings) {
-      try {
-        const dto = await normalizeListing(raw);
-        const propType = inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
-        await upsertListing(raw);
-        await updateRunCounts(runId, propType);
-      } catch (err) {
-        console.error('Error upserting listing', err && err.message ? err.message : err);
-        await updateRunCounts(runId, null);
+    for (let currentPage = page; currentPage < page + maxPages; currentPage++) {
+      const params = { page: currentPage, pageSize };
+      const data = await moteuService.fetchListings(params);
+      const listings = data && Array.isArray(data.ads) ? data.ads : [];
+      if (listings.length === 0) break;
+      for (let raw of listings) {
+        try {
+          const dto = await normalizeListing(raw);
+          const propType = dto.deletionDate ? 'directory' : inferPropertyType(dto.propertyTypeRaw || dto.listingStatus);
+          await upsertListing(raw);
+          await updateRunCounts(runId, propType);
+          totalProcessed++;
+        } catch (err) {
+          console.error('Error upserting listing', err && err.message ? err.message : err);
+          await updateRunCounts(runId, null);
+        }
       }
+      console.log(`MoteurImmo sync: page ${currentPage} done (${listings.length} items, cumulative: ${totalProcessed})`);
     }
     await finalizeRun(runId);
-    return listings.length;
+    return totalProcessed;
   } catch (err) {
     await finalizeRun(runId, err.message);
     throw err;

@@ -82,6 +82,12 @@ router.use("/external-listings", require("./externalListings.routes"));
 // ── Import Runs (MoteurImmo sync runs) ──────────────────────────────────────
 router.use("/import-runs", require("./importRun.routes"));
 
+// ── Agency Reveal (MoteurImmo) ──────────────────────────────────────────────
+router.use("/agency-reveal", require("./agencyReveal.routes"));
+
+// ── MoteurImmo Admin Dashboard ──────────────────────────────────────────────
+router.use("/admin/moteurimmo", require("./adminMoteurImmo.routes"));
+
 // ── Coach IA System ─────────────────────────────────────────────────────────
 router.use("/coach", require("./coach.routes"));
 
