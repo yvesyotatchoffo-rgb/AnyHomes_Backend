@@ -792,6 +792,137 @@ module.exports = {
     }
   },
 
+  /**
+   * Lightweight count-only endpoint — used by the filter modal preview.
+   * Reuses the property_stats cache (O(1)) for simple city/total queries,
+   * falls back to countDocuments for complex filters (no pipeline, no find).
+   */
+  count: async (req, res) => {
+    try {
+      const {
+        search,
+        status,
+        propertyType,
+        minPrice,
+        maxPrice,
+        minSurface,
+        maxSurface,
+        type,
+        rooms,
+        bedrooms,
+        offMarket,
+        proposal,
+        energy_efficient,
+        propertyFloor,
+        cooking,
+        equipment,
+        serviceAccessibility,
+        outside,
+        environment,
+        leisure,
+        ancilliary,
+        investment,
+        schoolId,
+        schoolType,
+        accountType,
+        addedBy,
+      } = req.query;
+
+      const query = { isDeleted: false };
+      if (status) query.status = status;
+
+      let textCity = null;
+      if (search) {
+        const searchTerms = search.split(' / ').map((t) => t.trim());
+        const textQuery = searchTerms
+          .map((term) => term.split(',')[0].trim() || term)
+          .join(' ');
+        query.$text = { $search: textQuery };
+        // Single location → candidate for city stats cache
+        if (searchTerms.length === 1) {
+          textCity = searchTerms[0].split(',')[0].trim().toLowerCase();
+        }
+      }
+
+      if (propertyType) query.propertyType = propertyType;
+      if (offMarket === 'true') query.offMarket = true;
+      if (proposal) query.proposal = proposal;
+      if (energy_efficient) query.energy_efficient = energy_efficient;
+      if (accountType) query.accountType = accountType;
+      if (addedBy) {
+        const id = addedBy.match(/^[0-9a-fA-F]{24}$/) ? require('mongoose').Types.ObjectId(addedBy) : null;
+        if (id) query.addedBy = id;
+      }
+      if (type) {
+        const types = type.split(',').map((t) => new RegExp(t.trim(), 'i'));
+        query.type = { $in: types };
+      }
+      if (rooms) query.rooms = { $in: rooms.split(',').map(String) };
+      if (bedrooms) query.bedrooms = { $in: bedrooms.split(',').map(String) };
+      if (propertyFloor) query.propertyFloor = { $in: propertyFloor.split(',').map(String) };
+      if (cooking) query.cooking = { $in: cooking.split(',').map((s) => s.trim()) };
+      if (equipment) query.equipment = { $in: equipment.split(',').map((s) => s.trim()) };
+      if (serviceAccessibility) query.serviceAccessibility = { $in: serviceAccessibility.split(',').map((s) => s.trim()) };
+      if (outside) query.outside = { $in: outside.split(',').map((s) => s.trim()) };
+      if (environment) query.environment = { $in: environment.split(',').map((s) => s.trim()) };
+      if (leisure) query.leisure = { $in: leisure.split(',').map((s) => s.trim()) };
+      if (ancilliary) query.ancilliary = { $in: ancilliary.split(',').map((s) => s.trim()) };
+      if (minPrice || maxPrice) {
+        const pf = {};
+        if (!isNaN(minPrice) && minPrice) pf.$gte = Number(minPrice);
+        if (!isNaN(maxPrice) && maxPrice) pf.$lte = Number(maxPrice);
+        if (Object.keys(pf).length) query.price = pf;
+      }
+      if (minSurface || maxSurface) {
+        const sf = {};
+        if (!isNaN(minSurface) && minSurface) sf.min = Number(minSurface);
+        if (!isNaN(maxSurface) && maxSurface) sf.max = Number(maxSurface);
+        if (Object.keys(sf).length) {
+          query.$expr = {
+            $and: [
+              sf.min !== undefined ? { $gte: [{ $toDouble: '$surface' }, sf.min] } : {},
+              sf.max !== undefined ? { $lte: [{ $toDouble: '$surface' }, sf.max] } : {},
+            ].filter(Boolean),
+          };
+        }
+      }
+
+      // ── Stats cache fast-paths ────────────────────────────────────────────
+      const qKeys = Object.keys(query);
+      const isSimpleActive =
+        qKeys.length === 2 &&
+        query.isDeleted === false &&
+        query.status === 'active';
+
+      // City-only: { isDeleted, status, $text } with no other filters
+      const isCityOnly =
+        textCity &&
+        qKeys.length === 3 &&
+        query.isDeleted === false &&
+        query.status === 'active' &&
+        query.$text;
+
+      let total;
+      if (isSimpleActive) {
+        const cached = await statsService.getTotal();
+        total = cached !== null ? cached : await Property.countDocuments(query);
+      } else if (isCityOnly) {
+        // Sum all "city:paris*" stats entries (handles arrondissements: "paris 10e", etc.)
+        // 53ms vs 1139ms countDocuments for Paris
+        const cached = await statsService.sumByPrefix(`city:${textCity}`);
+        total = cached !== null ? cached : await Property.countDocuments(query);
+      } else {
+        // Generic: no pipeline overhead, just a targeted count
+        total = await Property.countDocuments(query);
+      }
+
+      return res.status(200).json({ success: true, total });
+    } catch (err) {
+      console.error('[property/count] error:', err.message);
+      return res.status(500).json({ success: false, message: 'Count failed' });
+    }
+  },
+
   listing: async (req, res) => {
     try {
       let {

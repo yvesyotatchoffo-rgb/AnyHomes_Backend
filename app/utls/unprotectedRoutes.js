@@ -79,6 +79,7 @@ module.exports = {
     "/user/verifyOtp",
     "/property/map-markers",
     "/property/listing",
+    "/property/count",
     "/property/detail",
     "/revenue/listing",
     "/blogs/listing",

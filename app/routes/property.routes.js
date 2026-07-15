@@ -9,6 +9,7 @@ router.get("/activity-stats/:id", property.getActivityStats);
 router.post("/add", property.add);
 router.get("/detail", property.details);
 router.get("/map-markers", property.mapMarkers);
+router.get("/count", property.count);
 router.get("/listing", property.listing);
 router.put("/statusChange", property.statusChange);
 router.delete("/deleteProperty", property.delete);

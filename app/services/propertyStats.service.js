@@ -99,4 +99,19 @@ async function getCount(key) {
   }
 }
 
-module.exports = { increment, decrement, getTotal, getCount, keysForProperty };
+/**
+ * Sum all stats entries whose _id starts with the given prefix.
+ * Used to aggregate city counts like "city:paris" + "city:paris 10e" + ...
+ * Returns null if no matching entries found (caller should fall back).
+ */
+async function sumByPrefix(prefix) {
+  try {
+    const docs = await PropertyStats.find({ _id: { $regex: `^${prefix}` } }).lean();
+    if (!docs.length) return null;
+    return docs.reduce((sum, d) => sum + (d.count || 0), 0);
+  } catch (e) {
+    return null;
+  }
+}
+
+module.exports = { increment, decrement, getTotal, getCount, sumByPrefix, keysForProperty };
