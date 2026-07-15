@@ -20,6 +20,7 @@ const scoreService = require("../services/financialScore.service");
 const logActivity = require("../services/activityLog.service");
 const logPropertyActivity = require("../services/propertyActivityLog.service");
 const statsService = require("../services/propertyStats.service");
+const coordService = require("../services/propertyCoordinates.service");
 const upload = multer({
   dest: "uploads/", // Destination folder
   limits: {
@@ -341,12 +342,58 @@ module.exports = {
    * Retourne un échantillon de biens répartis sur tout le territoire
    * pour affichage sur la carte. Utilise $sample pour la distribution.
    */
+  /**
+   * Fetch random map markers — prefers the lightweight property_coordinates collection
+   * ($sample on tiny docs is O(1)), falls back to the full properties aggregation
+   * if the coordinates collection is empty or missing.
+   */
+  _fetchMapMarkers: async (count) => {
+    try {
+      const markers = await coordService.getRandomMarkers(count);
+      if (markers && markers.length > 0) {
+        return markers.map(m => ({ ...m, exactLocation: true }));
+      }
+    } catch (_) { /* fall through */ }
+
+    // Fallback: scan main collection
+    const fallback = await db.property.aggregate([
+      { $sample: { size: count * 5 } },
+      { $project: {
+          _id: 1, propertyTitle: 1, city: 1, zipcode: 1, price: 1, propertyType: 1,
+          images: { $slice: ["$images", 1] },
+          location: {
+            lat: { $arrayElemAt: ["$newlocation.coordinates", 1] },
+            lng: { $arrayElemAt: ["$newlocation.coordinates", 0] },
+          },
+          exactLocation: true,
+      }},
+      { $match: {
+          isDeleted: false,
+          'location.lat': { $nin: [null, 0] },
+          'location.lng': { $nin: [null, 0] },
+      }},
+      { $limit: count },
+    ]);
+    return fallback;
+  },
+
   mapMarkers: (() => {
     const cache = {};
     const cacheTime = {};
     const CACHE_TTL = 10 * 60 * 1000;
 
-    return async (req, res) => {
+    const prefetch = async (count) => {
+      const key = String(count);
+      try {
+        const markers = await module.exports._fetchMapMarkers(count);
+        cache[key] = markers;
+        cacheTime[key] = Date.now();
+      } catch (e) {
+        console.warn('[mapMarkers] prefetch error:', e.message);
+      }
+    };
+
+    const handler = async (req, res) => {
       try {
         const count = Math.min(Number(req.query.count) || 500, 2000);
         const key = String(count);
@@ -355,42 +402,17 @@ module.exports = {
           return res.status(200).json({ success: true, data: cache[key] });
         }
 
-        // IMPORTANT: $sample MUST be the FIRST stage to use MongoDB's fast
-        // pseudo-random cursor (O(1)). Moving $match after $sample means we
-        // over-sample then filter, which is still fast since we only inspect ~5×count docs.
-        const markers = await db.property.aggregate([
-          { $sample: { size: count * 5 } }, // over-sample to account for missing coordinates
-          { $project: {
-              _id: 1,
-              isDeleted: 1,
-              propertyTitle: 1,
-              city: 1,
-              zipcode: 1,
-              price: 1,
-              propertyType: 1,
-              images: { $slice: ["$images", 1] },
-              location: {
-                lat: { $arrayElemAt: ["$newlocation.coordinates", 1] },
-                lng: { $arrayElemAt: ["$newlocation.coordinates", 0] },
-              },
-              exactLocation: true,
-          }},
-          { $match: {
-              isDeleted: false,
-              'location.lat': { $nin: [null, 0] },
-              'location.lng': { $nin: [null, 0] },
-          }},
-          { $limit: count },
-        ]);
+        await prefetch(count);
 
-        cache[key] = markers;
-        cacheTime[key] = Date.now();
-
-        return res.status(200).json({ success: true, data: markers });
+        return res.status(200).json({ success: true, data: cache[key] || [] });
       } catch (err) {
         return res.status(500).json({ success: false, message: err.message });
       }
     };
+
+    // Expose prewarm for startup cache warming
+    handler.prewarm = prefetch;
+    return handler;
   })(),
 
   add: async (req, res) => {
@@ -515,6 +537,7 @@ module.exports = {
       // Fire-and-forget: update stats counter if property is active
       if (property.status === 'active') {
         statsService.increment(property);
+        coordService.upsert(property);
       }
 
       return res.status(200).json({
@@ -902,17 +925,26 @@ module.exports = {
         query.status === 'active' &&
         query.$text;
 
+      // City + propertyType: { isDeleted, status, $text, propertyType }
+      const isCityAndType =
+        textCity &&
+        query.propertyType &&
+        qKeys.length === 4 &&
+        query.isDeleted === false &&
+        query.status === 'active' &&
+        query.$text;
+
       let total;
       if (isSimpleActive) {
         const cached = await statsService.getTotal();
         total = cached !== null ? cached : await Property.countDocuments(query);
+      } else if (isCityAndType) {
+        const cached = await statsService.getCount(`city:${textCity}|type:${query.propertyType}`);
+        total = cached !== null ? cached : await Property.countDocuments(query);
       } else if (isCityOnly) {
-        // Sum all "city:paris*" stats entries (handles arrondissements: "paris 10e", etc.)
-        // 53ms vs 1139ms countDocuments for Paris
         const cached = await statsService.sumByPrefix(`city:${textCity}`);
         total = cached !== null ? cached : await Property.countDocuments(query);
       } else {
-        // Generic: no pipeline overhead, just a targeted count
         total = await Property.countDocuments(query);
       }
 
@@ -973,6 +1005,7 @@ module.exports = {
         offMarket,
         loggedInUser,
         schoolName,
+        cursor,
       } = req.query;
       const pageNumber = Number(page) || 1;
       let pageSize = Number(count) || 20;
@@ -2035,39 +2068,80 @@ module.exports = {
         // Use pre-computed counter when no complex filters are active (O(1) vs O(N) countDocuments)
         // Falls back to countDocuments when a filter narrows the result set beyond total counts.
         let total;
-        // A "simple" query is just { isDeleted: false, status: 'active' } — no text, no city, no addedBy etc.
         const queryKeys = Object.keys(query || {});
+        const financingKeys = Object.keys(financingProbabilityMatch || {});
+        const extraFilters = [...new Set([...queryKeys, ...financingKeys])];
         const isSimpleActiveQuery = queryKeys.length === 2
           && queryKeys.includes('isDeleted')
           && queryKeys.includes('status')
           && query.status === 'active'
           && query.isDeleted === false
-          && Object.keys(financingProbabilityMatch || {}).length === 0;
+          && financingKeys.length === 0;
+
+        // City + propertyType in listing: { isDeleted, status, $text, propertyType }
+        const isCityAndType = queryKeys.length === 4
+          && query.isDeleted === false
+          && query.status === 'active'
+          && query.$text
+          && query.propertyType
+          && financingKeys.length === 0;
 
         if (isSimpleActiveQuery) {
-          // Read from stats cache — sub-millisecond, scales to 5M+ docs
           const cached = await statsService.getTotal();
           total = (cached !== null) ? cached : await Property.countDocuments({ ...query });
+        } else if (isCityAndType) {
+          const search = req.query.search || '';
+          const textCity = search.split(/[ ,]/)[0]?.trim()?.toLowerCase() || '';
+          const cached = textCity ? await statsService.getCount(`city:${textCity}|type:${query.propertyType}`) : null;
+          total = (cached !== null) ? cached : await Property.countDocuments({ ...query, ...financingProbabilityMatch });
         } else if (query.$text && pageNumber > 1) {
-          // Text search on pages 2+: reuse cachedTotal sent by client to avoid 4-second count
+          // Text search on pages 2+: reuse cachedTotal sent by client
           const clientTotal = Number(req.query.cachedTotal);
           total = (clientTotal > 0) ? clientTotal : await Property.countDocuments({ ...query, ...financingProbabilityMatch });
         } else {
           total = await Property.countDocuments({ ...query, ...financingProbabilityMatch });
         }
 
-        const skipNo = (pageNumber - 1) * pageSize;
+        // Cursor-based pagination (avoids slow skip() for deep pages)
+        // When cursor is provided, use _id < cursor instead of skip(N)
+        const useCursor = !!cursor && !query.$text; // cursor + $text don't mix (relevance sort varies)
+        let cursorFilter = {};
+        if (useCursor) {
+          try {
+            cursorFilter = { _id: { $lt: new mongoose.Types.ObjectId(cursor) } };
+          } catch (_) { /* invalid cursor, fall back to skip */ }
+        }
+        const paginatedQuery = { ...query, ...financingProbabilityMatch, ...cursorFilter };
+
+        // For text search without explicit sort, use empty sort (avoids slow in-memory sort of 7000+ docs)
         const fastPathSort = (query.$text && !sortBy) ? {} : sortquery;
-        const docs = await Property.find({ ...query, ...financingProbabilityMatch })
+        const limit = Number(pageSize);
+        let cursorSort = fastPathSort;
+        if (useCursor) {
+          // For cursor pagination, always include _id:-1 as the final sort key
+          cursorSort = { ...fastPathSort, _id: -1 };
+        }
+
+        const docs = await Property.find(paginatedQuery)
           .select(projection)
-          .sort(fastPathSort)
-          .skip(skipNo)
-          .limit(Number(pageSize))
+          .sort(cursorSort)
+          .skip(useCursor ? 0 : Math.max(0, (pageNumber - 1) * pageSize))
+          .limit(limit + (useCursor ? 1 : 0)) // fetch 1 extra when using cursor to detect next page
           .populate('addedBy', 'firstName lastName fullName image accountType companyLogo featuredProfilePhoto username companyName')
           .lean();
 
+        // Extract next cursor — only when there IS a next page
+        let nextCursor = null;
+        let resultDocs = docs;
+        if (useCursor && docs.length > limit) {
+          resultDocs = docs.slice(0, limit);
+          nextCursor = docs[limit - 1]._id;
+        } else {
+          resultDocs = docs;
+        }
+
         // Normalise: expose populated user as addedBy_details
-        const docsWithOwner = docs.map(d => {
+        const docsWithOwner = resultDocs.map(d => {
           // Transform newlocation.coordinates → location.lat/lng if not already present
           if (d.newlocation?.coordinates && !d.location?.lat) {
             d.location = {
@@ -2095,6 +2169,7 @@ module.exports = {
           message: constants.PROPERTY.RETRIEVED,
           total,
           data: processedDocs,
+          ...(useCursor ? { nextCursor } : {}),
         });
       }
 
@@ -3060,12 +3135,16 @@ module.exports = {
             }, {
               status: "deactive"
             });
+            statsService.decrement(findProperty);
+            coordService.remove(findProperty._id);
           } else {
             await Property.updateOne({
               _id: id
             }, {
               status: "active"
             });
+            statsService.increment(findProperty);
+            coordService.upsert(findProperty);
           }
           return res.status(200).json({
             success: true,
@@ -3112,6 +3191,7 @@ module.exports = {
         // Decrement stats if property was active
         if (findProperty.status === 'active') {
           statsService.decrement(findProperty);
+          coordService.remove(findProperty._id);
         }
 
         return res.status(200).json({
@@ -3469,6 +3549,30 @@ module.exports = {
         });
       }
       const updatedProperty = await Property.findOne({ _id: propertyId });
+
+      // Update stats if city, zipcode, propertyType, or status changed
+      const oldProp = property;
+      const newProp = updatedProperty;
+      const statsChanged = (
+        (oldProp.city || '').toLowerCase() !== (newProp.city || '').toLowerCase() ||
+        (oldProp.zipcode || '') !== (newProp.zipcode || '') ||
+        (oldProp.propertyType || '') !== (newProp.propertyType || '') ||
+        (oldProp.status || '') !== (newProp.status || '')
+      );
+      if (statsChanged) {
+        if (oldProp.status === 'active') {
+          statsService.decrement(oldProp);
+          coordService.remove(oldProp._id);
+        }
+        if (newProp.status === 'active') {
+          statsService.increment(newProp);
+          coordService.upsert(newProp);
+        }
+      } else if (newProp.status === 'active') {
+        // Stats didn't change but coordinates might (e.g. price update)
+        coordService.upsert(newProp);
+      }
+
       logActivity(req.identity.id, "property_update", { label: "Bien modifié", objectType: "property", objectId: propertyId, objectTitle: updatedProperty.propertyTitle || "" });
       return res.status(200).json({
         success: true,
