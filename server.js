@@ -11,7 +11,13 @@ function writeCrashLog(type, err) {
   console.error(entry);
 }
 process.on("uncaughtException",  function(err) { writeCrashLog("uncaughtException",  err); process.exit(1); });
-process.on("unhandledRejection", function(err) { writeCrashLog("unhandledRejection", err); process.exit(1); });
+process.on("unhandledRejection", function(err) {
+  if (err?.name === 'PoolClearedOnNetworkError' || err?.message?.includes('interrupted due to server monitor timeout')) {
+    console.warn('[Server] MongoDB connection interrupted — not crashing, will reconnect automatically');
+    return;
+  }
+  writeCrashLog("unhandledRejection", err); process.exit(1);
+});
 // ─────────────────────────────────────────────────────────────────────────────
 
 
