@@ -148,8 +148,9 @@ module.exports = (agenda, db) => {
       }
     });
 
-    agenda.every("2 minutes", "image-downloader");
-    console.log("Image downloader job scheduled (every 2 minutes).");
+    // Désactivé temporairement — 73k images déjà téléchargées, I/O trop lourd
+    // agenda.every("2 minutes", "image-downloader");
+    // console.log("Image downloader job scheduled (every 2 minutes).");
   } catch (err) {
     console.error("Failed to load image downloader job:", err);
   }

@@ -1121,7 +1121,7 @@ module.exports = {
       if (cached) return res.status(200).json({ success: true, data: cached });
 
       // --- propertyAttractivity: latest properties owned by user ---
-      const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
+      const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).limit(50).lean();
       const propertyAttractivity = {
         visible: true,
         period: req.query.period || 'day',

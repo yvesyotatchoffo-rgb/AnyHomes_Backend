@@ -134,7 +134,8 @@ async function invalidateAll() {
   await invalidatePattern('listing:*');
   await invalidatePattern('count:*');
   await invalidatePattern('markers:*');
-  await invalidatePattern('dashboard:*');
+  // dashboard:* deliberately NOT invalidated — 5min TTL suffit
+  // La première requête après création serait trop lente (4s+)
 }
 
 module.exports = {
