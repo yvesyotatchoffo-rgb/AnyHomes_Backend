@@ -2076,6 +2076,7 @@ module.exports = {
           randomLocation: 1,
           offMarket: 1,
           propertyViewerCount: 1,
+          chooseDocumentMinProbability: 1,
         };
 
         // Use pre-computed counter when no complex filters are active (O(1) vs O(N) countDocuments)
@@ -2184,12 +2185,17 @@ module.exports = {
           };
         });
 
-        // Fast-path: no logged-in user → tag all off-market as blurred_no_account
-        const processedDocs = docsWithOwner.map(d => {
+        // Fast-path: compute proper off-market access level (ownership, score threshold)
+        const processedDocs = [];
+        let hiddenCount = 0;
+        for (const d of docsWithOwner) {
           const isOm = d.offMarket === true || String(d.propertyType || '').toLowerCase() === 'offmarket';
-          if (!isOm) return d;
-          return { offMarket: true, offMarketAccessLevel: 'blurred_no_account', propertyType: d.propertyType };
-        });
+          if (!isOm) { processedDocs.push(d); continue; }
+          const accessLevel = await getOffMarketAccessLevel(d, loggedInUser, loggedInUserData);
+          if (accessLevel === 'hidden') { hiddenCount++; continue; }
+          processedDocs.push({ ...d, offMarket: true, offMarketAccessLevel: accessLevel });
+        }
+        if (hiddenCount > 0) total = Math.max(0, total - hiddenCount);
 
         // Cache page 1 results in Redis for 30s (only simple queries, no cursor)
         if (!useCursor && pageNumber <= 1 && isSimpleActiveQuery) {
