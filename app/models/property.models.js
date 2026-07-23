@@ -251,6 +251,7 @@ module.exports = (mongoose) => {
     schema.index({ isDeleted: 1, status: 1, createdAt: -1 });
     schema.index({ isDeleted: 1, status: 1, addedBy: 1 });
     schema.index({ isDeleted: 1, status: 1, propertyType: 1, createdAt: -1 });
+    schema.index({ zipcode: 1, isDeleted: 1 });
 
     const property = mongoose.model("properties", schema);
     return property;

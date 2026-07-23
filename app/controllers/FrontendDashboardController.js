@@ -199,44 +199,42 @@ const buildPastTransactions = async (userId) => {
 
 // Shared: get reference postal code from the same 4 sources used by buildPastTransactions
 const getReferencePostalCode = async (userId) => {
-  // Source 1: most recent active saved alert
-  const alert = await db.alerts
-    .find({ user_id: userId, isDeleted: false, status: 'active' })
-    .sort({ updatedAt: -1 })
-    .limit(1)
-    .lean()
-    .then(r => r[0] || null);
-  if (alert?.filteredData) {
-    const pc = extractPostalCode(alert.filteredData.search);
-    if (pc) return pc;
-  }
+  // Parallel race: try all sources simultaneously, return first result
+  const results = await Promise.allSettled([
+    // Source 1: most recent active saved alert
+    db.alerts
+      .find({ user_id: userId, isDeleted: false, status: 'active' })
+      .sort({ updatedAt: -1 }).limit(1).lean()
+      .then(r => {
+        const a = r[0];
+        if (a?.filteredData) {
+          const pc = extractPostalCode(a.filteredData.search);
+          return pc || null;
+        }
+        return null;
+      }),
+    // Source 2: last created property
+    db.property
+      .find({ addedBy: userId, isDeleted: false })
+      .sort({ createdAt: -1 }).limit(1).select('zipcode').lean()
+      .then(r => r[0]?.zipcode || null),
+  ]);
 
-  // Source 2: last created property
-  const ownProp = await db.property
-    .find({ addedBy: userId, isDeleted: false })
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .select('zipcode')
-    .lean()
-    .then(r => r[0] || null);
-  if (ownProp?.zipcode) return ownProp.zipcode;
+  const postalCode = results.find(r => r.status === 'fulfilled' && r.value)?.value || null;
+  if (postalCode) return postalCode;
 
-  // Source 3: quicksearches (empty collection — skip)
-
-  // Source 4: last followed property
-  const lastFollow = await db.followUnfollow
-    .find({ user_id: userId, follow_unfollow: true })
-    .sort({ createdAt: -1 })
-    .limit(1)
-    .lean()
-    .then(r => r[0] || null);
-  if (lastFollow?.property_id) {
-    const followedProp = await db.property
-      .findOne({ _id: lastFollow.property_id })
-      .select('zipcode')
-      .lean();
-    if (followedProp?.zipcode) return followedProp.zipcode;
-  }
+  // Source 3 (fallback): last followed property
+  try {
+    const lastFollow = await db.followUnfollow
+      .find({ user_id: userId, follow_unfollow: true })
+      .sort({ createdAt: -1 }).limit(1).lean()
+      .then(r => r[0] || null);
+    if (lastFollow?.property_id) {
+      const followedProp = await db.property
+        .findOne({ _id: lastFollow.property_id }).select('zipcode').lean();
+      return followedProp?.zipcode || null;
+    }
+  } catch (_) {}
 
   return null;
 };
@@ -1120,8 +1118,11 @@ module.exports = {
       const cached = await cacheService.get(cacheKey);
       if (cached) return res.status(200).json({ success: true, data: cached });
 
+      console.time('dashboard:TOTAL');
+      console.time('dashboard:properties');
       // --- propertyAttractivity: latest properties owned by user ---
       const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).limit(50).lean();
+      console.timeEnd('dashboard:properties');
       const propertyAttractivity = {
         visible: true,
         period: req.query.period || 'day',
@@ -1146,6 +1147,7 @@ module.exports = {
         ],
       };
 
+      console.time('dashboard:savedSearches');
       // --- savedSearchResults: user's saved search alerts ---
       // Utilise la collection 'alerts' (avec name, filteredData) et non 'savesearch'
       const buildAlertUrl = (fd) => {
@@ -1220,8 +1222,10 @@ module.exports = {
           },
         ],
       };
+      console.timeEnd('dashboard:savedSearches');
 
       // --- todoList: simple heuristics based on user role / properties ---
+      console.time('dashboard:todoList');
       const todos = [];
 
       // --- Card 0: CREATE_RENTER_FILE - Shown to renters who haven't created renter file yet ---
@@ -1959,6 +1963,8 @@ module.exports = {
         return dateB - dateA;
       });
 
+      console.timeEnd('dashboard:todoList');
+      console.time('dashboard:pastTransactions');
       const todoList = {
         visible: true,
         title: 'Votre ToDo Liste',
@@ -2105,8 +2111,10 @@ module.exports = {
       }
 
       // --- pastTransactions: real historical transactions matching user context ---
+      console.timeEnd('dashboard:pastTransactions');
       let pastTransactions = mockPastTransactions;
       try {
+        console.time('dashboard:p2pEstimation');
         pastTransactions = await buildPastTransactions(userId);
       } catch (err) {
         console.error('Error fetching pastTransactions:', err);
@@ -2119,24 +2127,31 @@ module.exports = {
       } catch (err) {
         console.error('Error fetching p2pEstimation:', err);
       }
+      console.timeEnd('dashboard:p2pEstimation');
 
       // --- p2pReport: real aggregated estimations for user's own properties ---
+      console.time('dashboard:p2pReport');
       let p2pReport = mockP2PReport;
       try {
         p2pReport = await buildP2PReport(userId);
       } catch (err) {
         console.error('Error fetching p2pReport:', err);
       }
+      console.timeEnd('dashboard:p2pReport');
 
       // --- ownerPipeline: real metrics for each of user's own properties ---
+      console.time('dashboard:ownerPipeline');
       let ownerPipeline = mockOwnerPipeline;
       try {
         ownerPipeline = await buildOwnerPipeline(userId);
       } catch (err) {
         console.error('Error fetching ownerPipeline:', err);
       }
+      console.timeEnd('dashboard:ownerPipeline');
 
+      console.time('dashboard:trainingCenter');
       const trainingCenter = await buildTrainingCenter();
+      console.timeEnd('dashboard:trainingCenter');
       const sections = {
         todoList,
         propertyAttractivity,
@@ -2160,6 +2175,7 @@ module.exports = {
         sections,
       };
 
+      console.timeEnd('dashboard:TOTAL');
       cacheService.set(cacheKey, data, 300);
       return res.status(200).json({ success: true, data });
     } catch (err) {
