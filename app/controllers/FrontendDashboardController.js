@@ -1,4 +1,5 @@
 const db = require('../models');
+const cacheService = require('../services/cache.service');
 const ServiceOrderEn = require('../modules/services-marketplace/models/ServiceOrder_en.model');
 const ServiceOrderFr = require('../modules/services-marketplace/models/ServiceOrder_fr.model');
 
@@ -1114,8 +1115,23 @@ module.exports = {
         return res.status(200).json({ success: true, data });
       }
 
+      // --- Cache check: return cached dashboard if available ---
+      const cacheKey = `dashboard:overview:${userId}:${req.query.period || 'day'}`;
+      const cached = await cacheService.get(cacheKey);
+      if (cached) return res.status(200).json({ success: true, data: cached });
+
+      // --- Parallel section building for independent sections ---
+      const [properties, savedSearches, pastTransactionsResult, p2pEstimationResult, trainingCenterResult, p2pReport, ownerPipeline] = await Promise.all([
+        db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).lean(),
+        db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean(),
+        buildPastTransactions(userId),
+        buildP2PEstimation(userId),
+        buildTrainingCenter(),
+        buildP2PReport(userId).catch(() => mockP2PReport),
+        buildOwnerPipeline(userId).catch(() => mockOwnerPipeline),
+      ]);
+
       // --- propertyAttractivity: latest properties owned by user ---
-      const properties = await db.property.find({ addedBy: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
       const propertyAttractivity = {
         visible: true,
         period: req.query.period || 'day',
@@ -1177,7 +1193,6 @@ module.exports = {
         if (lastViewedAt) qs.createdAt = { $gt: new Date(lastViewedAt) };
         return qs;
       };
-      const savedSearches = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
       const savedSearchResults = {
         visible: true,
         emptyState: savedSearches.length === 0 ? { message: 'Aucune alerte de recherche', ctaLabel: 'Nouvelle recherche', ctaRoute: '/properties' } : null,
@@ -2098,39 +2113,12 @@ module.exports = {
         propertySearchPipeline = mockPropertySearchPipeline;
       }
 
-      // --- pastTransactions: real historical transactions matching user context ---
-      let pastTransactions = mockPastTransactions;
-      try {
-        pastTransactions = await buildPastTransactions(userId);
-      } catch (err) {
-        console.error('Error fetching pastTransactions:', err);
-      }
+      // --- Use pre-fetched results from parallel batch ---
+      const pastTransactions = pastTransactionsResult || mockPastTransactions;
+      const p2pEstimation = p2pEstimationResult || mockP2PEstimation;
+      const trainingCenter = trainingCenterResult || mockPastTransactions;
 
-      // --- p2pEstimation: real properties at user's reference postal code ---
-      let p2pEstimation = mockP2PEstimation;
-      try {
-        p2pEstimation = await buildP2PEstimation(userId);
-      } catch (err) {
-        console.error('Error fetching p2pEstimation:', err);
-      }
-
-      // --- p2pReport: real aggregated estimations for user's own properties ---
-      let p2pReport = mockP2PReport;
-      try {
-        p2pReport = await buildP2PReport(userId);
-      } catch (err) {
-        console.error('Error fetching p2pReport:', err);
-      }
-
-      // --- ownerPipeline: real metrics for each of user's own properties ---
-      let ownerPipeline = mockOwnerPipeline;
-      try {
-        ownerPipeline = await buildOwnerPipeline(userId);
-      } catch (err) {
-        console.error('Error fetching ownerPipeline:', err);
-      }
-
-      const trainingCenter = await buildTrainingCenter();
+      // --- p2pReport & ownerPipeline are fetched in parallel above ---
       const sections = {
         todoList,
         propertyAttractivity,
@@ -2154,6 +2142,7 @@ module.exports = {
         sections,
       };
 
+      cacheService.set(cacheKey, data, 300);
       return res.status(200).json({ success: true, data });
     } catch (err) {
       console.error('FrontendDashboardController.getOverview error', err);

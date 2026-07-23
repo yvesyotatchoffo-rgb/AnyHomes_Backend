@@ -142,3 +142,20 @@ Error: listen EADDRINUSE: address already in use :::6089
     at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
     at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
 ────────────────────────────────────────────────────────────────────────────────
+[2026-07-23T00:34:08.475Z] [uncaughtException]
+/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/app/controllers/FrontendDashboardController.js:1136
+        period: req.query.period || 'day',
+              ^
+
+SyntaxError: Unexpected token ':'
+    at wrapSafe (node:internal/modules/cjs/loader:1762:18)
+    at Module._compile (node:internal/modules/cjs/loader:1803:20)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.require (node:internal/modules/cjs/loader:1575:12)
+    at require (node:internal/modules/helpers:191:16)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/app/routes/frontendDashboard.routes.js:2:27)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+────────────────────────────────────────────────────────────────────────────────

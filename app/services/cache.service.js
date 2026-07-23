@@ -134,6 +134,7 @@ async function invalidateAll() {
   await invalidatePattern('listing:*');
   await invalidatePattern('count:*');
   await invalidatePattern('markers:*');
+  await invalidatePattern('dashboard:*');
 }
 
 module.exports = {
