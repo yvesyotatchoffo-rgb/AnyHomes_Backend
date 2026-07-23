@@ -4,6 +4,7 @@ module.exports = (mongoose) => {
   var schema = mongoose.Schema(
     {
       title: String,
+      title_en: { type: String, default: "" },
       image: String,
       description: "string",
       status: { type: String, default: "active" },

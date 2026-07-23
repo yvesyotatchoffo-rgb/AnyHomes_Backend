@@ -133,7 +133,7 @@ module.exports = {
 
   listing: async (req, res) => {
     try {
-      const { search, page, count, sortBy, status, categoryId } = req.query;
+      const { search, page, count, sortBy, status, categoryId, lang } = req.query;
       var query = {};
 
       if (search) {
@@ -187,6 +187,7 @@ module.exports = {
           $project: {
             id: "$_id",
             title: { $toLower: "$title" },
+            title_en: 1,
             description: "$description",
             image: "$image",
             status: "$status",
