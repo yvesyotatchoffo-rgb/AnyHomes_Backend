@@ -14,7 +14,7 @@ module.exports = {
                     message: "Payload missing",
                 });
             }
-            let revenuedata = await Revenue.findOne({ name: name, isDeleted: false });
+            let revenuedata = await Revenue.findOne({ name: name, isDeleted: false, type: data.type || "Ratings" });
             if (!revenuedata) {
                 data.addedBy = req.identity.id;
                 const createRevenue = await Revenue.create(data);

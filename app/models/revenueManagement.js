@@ -5,6 +5,7 @@ module.exports = (mongoose) => {
         {
             name: String,
             type: { type: String, enum: ["State", "Revenue", "Revenue-Source", "Expense", "Ratings", "Renovation"] },
+            placeholderUrl: { type: String, default: "" },
             image: String,
             revenueType: { type: Schema.Types.ObjectId, ref: "revenueManagement" },
             status: { type: String, default: "active" },

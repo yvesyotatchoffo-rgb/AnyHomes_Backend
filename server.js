@@ -3,6 +3,19 @@ var cors = require("cors");
 let http = require("http");
 var bcrypt = require("bcrypt");
 
+// ── Crash logger ──────────────────────────────────────────────────────────────
+const CRASH_LOG = require("path").join(__dirname, "crash.log");
+function writeCrashLog(type, err) {
+  const entry = "\n[" + new Date().toISOString() + "] [" + type + "]\n" + (err && err.stack ? err.stack : String(err)) + "\n" + "─".repeat(80);
+  try { require("fs").appendFileSync(CRASH_LOG, entry); } catch (_) {}
+  console.error(entry);
+}
+process.on("uncaughtException",  function(err) { writeCrashLog("uncaughtException",  err); process.exit(1); });
+process.on("unhandledRejection", function(err) { writeCrashLog("unhandledRejection", err); process.exit(1); });
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+
 const app = express();
 // CORS is configured below with credentials support for local frontend dev.
 

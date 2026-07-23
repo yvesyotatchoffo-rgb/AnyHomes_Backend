@@ -38,6 +38,7 @@ module.exports = (mongoose) => {
       rooms: { type: String },
       bathroom: { type: String },
       surface: { type: String },
+      landSurface: { type: String },
       propertyFloor: { type: String },
       toilets: { type: String },
       livingRoom: { type: String },

@@ -14,6 +14,7 @@ router.use("/blogs", require("./blogs.routes"));
 router.use("/faqs", require("./faq.routes"));
 router.use("/content", require("./contentManagement.routes"));
 router.use("/property", require("./property.routes"));
+router.use("/property", require("./listingWriting.routes"));
 router.use("/property/qr-code", require("./qrCode.routes"));
 router.use("/qr", require("./qr.routes"));
 router.use("/favorites", require("./favorite.routes"));
@@ -84,6 +85,9 @@ router.use("/import-runs", require("./importRun.routes"));
 
 // ── Agency Reveal (MoteurImmo) ──────────────────────────────────────────────
 router.use("/agency-reveal", require("./agencyReveal.routes"));
+
+// ── LLM Monitoring ──────────────────────────────────────────────────────────
+router.use("/admin", require("./adminLlmMonitoring.routes"));
 
 // ── MoteurImmo Admin Dashboard ──────────────────────────────────────────────
 router.use("/admin/moteurimmo", require("./adminMoteurImmo.routes"));

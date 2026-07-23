@@ -1,0 +1,144 @@
+
+[2026-07-20T22:14:06.005Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-20T22:37:09.408Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-20T22:37:09.408Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-20T22:37:13.572Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-20T22:37:13.671Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:14.388Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:14.389Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:14.389Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:21.146Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:21.165Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────
+[2026-07-22T16:26:21.193Z] [uncaughtException]
+Error: listen EADDRINUSE: address already in use :::6089
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenInCluster (node:net:2065:12)
+    at Server.listen (node:net:2170:7)
+    at Object.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/server.js:283:13)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+────────────────────────────────────────────────────────────────────────────────

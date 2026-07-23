@@ -16,12 +16,11 @@ module.exports = {
         });
       }
 
-      const finddraft = await db.draftProperty.find({ propertyType: data.propertyType, addedBy: req.identity.id });
-      console.log(finddraft)
+      const finddraft = await db.draftProperty.find({ addedBy: req.identity.id });
       if (finddraft.length > 0) {
         return res.status(400).json({
           success: false,
-          message: `You already have a draft for ${data.propertyType} type of property.`
+          message: `You already have a draft.`
         })
       }
       data.addedBy = req.identity.id;
@@ -81,21 +80,14 @@ module.exports = {
 
   delete: async (req, res) => {
     try {
-      const { propertyType, userId } = req.query;
-      if (!userId || !propertyType) {
+      const { userId } = req.query;
+      if (!userId) {
         return res.status(400).json({
           success: false,
           message: constants.DRAFTPROPERTY.PAYLOAD_MISSING,
         })
       }
-      const findDraft = await db.draftProperty.findOne({ addedBy: userId, propertyType });
-      if (!findDraft) {
-        return res.status(400).json({
-          success: false,
-          message: constants.DRAFTPROPERTY.NOT_FOUND,
-        })
-      }
-      await db.draftProperty.deleteOne({ addedBy: userId, propertyType })
+      await db.draftProperty.deleteMany({ addedBy: userId })
       return res.status(200).json({
         success: true,
         message: constants.DRAFTPROPERTY.DELTED,

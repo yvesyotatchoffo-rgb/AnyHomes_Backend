@@ -91,6 +91,12 @@ db.CoachMessageRequest = require("./coachMessageRequest.model.js")(mongoose)
 db.CoachMessageRecord = require("./coachMessageRecord.model.js")(mongoose)
 db.CoachMessageHistory = require("./coachMessageHistory.model.js")(mongoose)
 
+// Listing Writing (AI Generation)
+db.ListingWritingVersion = require("./listingWritingVersion.model.js")(mongoose)
+
+// LLM Error Tracking
+db.LlmErrorLog = require("./llmErrorLog.model.js")(mongoose)
+
 // Import Runs (MoteurImmo, etc.)
 db.importRun = require("./importRun.model.js")(mongoose)
 

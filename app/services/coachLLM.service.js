@@ -43,6 +43,7 @@ class CoachLLMService {
       case "deepseek":
         this.apiKey = process.env.DEEPSEEK_API_KEY || "";
         this.apiBase = process.env.DEEPSEEK_API_BASE || "https://api.deepseek.com";
+        this.model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
         if (!this.apiKey) {
           logger.warn("DeepSeek selected but DEEPSEEK_API_KEY not configured, falling back to Ollama");
           this.provider = "ollama";
