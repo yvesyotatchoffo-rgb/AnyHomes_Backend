@@ -78,7 +78,6 @@ async function main() {
           propertyId: prop._id,
           addedBy: systemUserId,
           type: 'moteurimmoLeavingMarket',
-          createdAt: prop.deletionDate || new Date(),
           meta: {
             reason,
             lastPrice: prop.price || 0,
