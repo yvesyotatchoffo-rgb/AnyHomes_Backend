@@ -1320,19 +1320,23 @@ module.exports = {
         // --- Card 22: CREATE_QR_CODE - Une carte par bien en vente ou en location sans QR code ---
         try {
           const saleOrRentProperties = properties.filter(p => p.propertyType === 'sale' || p.propertyType === 'rent');
-          for (const p of saleOrRentProperties) {
-            const existingQr = await db.qrFlyers.findOne({ propertyId: p._id, isDeleted: false }).lean();
-            if (!existingQr) {
-              todos.push({
-                id: `todo-create-qr-code-${p._id}`,
-                type: 'CREATE_QR_CODE',
-                label: `Créer le QR code de votre bien`,
-                role: 'OWNER',
-                priority: 50,
-                createdAt: p.createdAt,
-                property: { id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
-                action: { route: `/property/qr-code?propertyId=${p._id}` },
-              });
+          if (saleOrRentProperties.length > 0) {
+            const propIds = saleOrRentProperties.map(p => p._id);
+            const existingQrFlyers = await db.qrFlyers.find({ propertyId: { $in: propIds }, isDeleted: false }).select('propertyId').lean();
+            const existingIds = new Set(existingQrFlyers.map(q => String(q.propertyId)));
+            for (const p of saleOrRentProperties) {
+              if (!existingIds.has(String(p._id))) {
+                todos.push({
+                  id: `todo-create-qr-code-${p._id}`,
+                  type: 'CREATE_QR_CODE',
+                  label: `Créer le QR code de votre bien`,
+                  role: 'OWNER',
+                  priority: 50,
+                  createdAt: p.createdAt,
+                  property: { id: p._id, coverUrl: resolvePropertyCoverUrl(p.images) || defaultCover, type: p.type || '', surface: p.surface || 0, city: p.city || '' },
+                  action: { route: `/property/qr-code?propertyId=${p._id}` },
+                });
+              }
             }
           }
         } catch (err) {
@@ -1354,18 +1358,32 @@ module.exports = {
             ...asLeadInterests.map(i => ({ interest: i, isUserOwner: false })),
           ];
 
+          // Batch-load all properties and users referenced by interests
+          const interestPropIds = [...new Set(interestEntries.map(e => e.interest.propertyId).filter(Boolean))];
+          const interestProps = interestPropIds.length > 0
+            ? await db.property.find({ _id: { $in: interestPropIds } }).select('type surface city propertyTitle title images addedBy propertyType listingType').lean()
+            : [];
+          const interestPropMap = {};
+          interestProps.forEach(p => { interestPropMap[String(p._id)] = p; });
+
+          const interestUserIds = [...new Set(interestEntries.map(e => {
+            const prop = interestPropMap[String(e.interest.propertyId)];
+            return e.isUserOwner ? e.interest.buyerId : (prop ? prop.addedBy : null);
+          }).filter(Boolean))];
+          const interestUsers = interestUserIds.length > 0
+            ? await db.users.find({ _id: { $in: interestUserIds } }).select('firstName lastName').lean()
+            : [];
+          const interestUserMap = {};
+          interestUsers.forEach(u => { interestUserMap[String(u._id)] = u; });
+
           for (const { interest, isUserOwner } of interestEntries) {
             const funnelStatus = interest.funnelStatus || '';
-            const otherUserId = isUserOwner ? interest.buyerId : (interest.propertyId ? null : null);
 
-            // Get property details
-            const property = await db.property.findById(interest.propertyId).select('type surface city propertyTitle title images addedBy propertyType listingType').lean();
+            const property = interestPropMap[String(interest.propertyId)];
             if (!property) continue;
 
-            // For owner interests, other user = buyer; for lead interests, other user = property owner
             const resolvedOtherUserId = isUserOwner ? interest.buyerId : property.addedBy;
-            const otherUser = await db.users.findById(resolvedOtherUserId).select('firstName lastName').lean();
-
+            const otherUser = interestUserMap[String(resolvedOtherUserId)];
             if (!otherUser) continue;
             
             const propertyInfo = {
@@ -1798,25 +1816,38 @@ module.exports = {
         // --- Card 1: Rooms where the last message is from someone else (user hasn't replied) ---
         try {
           const userRooms = await db.roommembers.find({ user_id: userId }).select('room_id property_id').lean();
+          const roomIds = userRooms.map(r => r.room_id);
+          const propIds = [...new Set(userRooms.map(r => r.property_id).filter(Boolean))];
+
+          const [allLastMsgs, allProps] = await Promise.all([
+            roomIds.length > 0
+              ? db.messages.aggregate([
+                  { $match: { room_id: { $in: roomIds }, isDeleted: false } },
+                  { $sort: { createdAt: -1 } },
+                  { $group: { _id: '$room_id', doc: { $first: '$$ROOT' } } },
+                ]).then(r => r.map(x => x.doc))
+              : [],
+            propIds.length > 0
+              ? db.property.find({ _id: { $in: propIds } }).select('type surface city propertyTitle title images').lean()
+              : [],
+          ]);
+          const msgMap = {};
+          allLastMsgs.forEach(m => { msgMap[m.room_id] = m; });
+          const propMap = {};
+          allProps.forEach(p => { propMap[String(p._id)] = p; });
 
           let replyCount = 0;
           for (const room of userRooms) {
             if (replyCount >= 3) break;
 
-            const lastMsg = await db.messages.findOne({ room_id: room.room_id, isDeleted: false })
-              .sort({ createdAt: -1 }).lean();
-
+            const lastMsg = msgMap[room.room_id];
             if (!lastMsg || lastMsg.sender.toString() === userId.toString()) continue;
 
             const sender = await db.users.findById(lastMsg.sender).select('firstName lastName').lean();
             if (!sender) continue;
 
-            // Get property from room or message
             const propId = room.property_id || lastMsg.property_id;
-            let property = null;
-            if (propId) {
-              property = await db.property.findById(propId).select('type surface city propertyTitle title images').lean();
-            }
+            const property = propId ? propMap[String(propId)] : null;
 
             const senderName = `${sender.firstName || ''} ${sender.lastName || ''}`.trim();
             todos.push({
@@ -2111,48 +2142,26 @@ module.exports = {
         propertySearchPipeline = mockPropertySearchPipeline;
       }
 
-      // --- pastTransactions: real historical transactions matching user context ---
-      console.timeEnd('dashboard:pastTransactions');
-      let pastTransactions = mockPastTransactions;
-      try {
-        console.time('dashboard:p2pEstimation');
-        pastTransactions = await buildPastTransactions(userId);
-      } catch (err) {
-        console.error('Error fetching pastTransactions:', err);
-      }
-
-      // --- p2pEstimation: real properties at user's reference postal code ---
-      let p2pEstimation = mockP2PEstimation;
-      try {
-        p2pEstimation = await buildP2PEstimation(userId);
-      } catch (err) {
-        console.error('Error fetching p2pEstimation:', err);
-      }
-      console.timeEnd('dashboard:p2pEstimation');
-
-      // --- p2pReport: real aggregated estimations for user's own properties ---
-      console.time('dashboard:p2pReport');
-      let p2pReport = mockP2PReport;
-      try {
-        p2pReport = await buildP2PReport(userId);
-      } catch (err) {
-        console.error('Error fetching p2pReport:', err);
-      }
-      console.timeEnd('dashboard:p2pReport');
-
-      // --- ownerPipeline: real metrics for each of user's own properties ---
-      console.time('dashboard:ownerPipeline');
-      let ownerPipeline = mockOwnerPipeline;
-      try {
-        ownerPipeline = await buildOwnerPipeline(userId);
-      } catch (err) {
-        console.error('Error fetching ownerPipeline:', err);
-      }
-      console.timeEnd('dashboard:ownerPipeline');
-
-      console.time('dashboard:trainingCenter');
-      const trainingCenter = await buildTrainingCenter();
-      console.timeEnd('dashboard:trainingCenter');
+      // --- Parallel: build independent sections (pastTransactions, p2p, owner, training) ---
+      console.time('dashboard:parallelSections');
+      const [pastTransactions, p2pEstimation, p2pReport, ownerPipeline, trainingCenter] = await Promise.all([
+        (async () => {
+          try { return await buildPastTransactions(userId); } catch (err) { console.error('Error fetching pastTransactions:', err); return mockPastTransactions; }
+        })(),
+        (async () => {
+          try { return await buildP2PEstimation(userId); } catch (err) { console.error('Error fetching p2pEstimation:', err); return mockP2PEstimation; }
+        })(),
+        (async () => {
+          try { return await buildP2PReport(userId); } catch (err) { console.error('Error fetching p2pReport:', err); return mockP2PReport; }
+        })(),
+        (async () => {
+          try { return await buildOwnerPipeline(userId); } catch (err) { console.error('Error fetching ownerPipeline:', err); return mockOwnerPipeline; }
+        })(),
+        (async () => {
+          try { return await buildTrainingCenter(); } catch (err) { console.error('Error fetching trainingCenter:', err); return []; }
+        })(),
+      ]);
+      console.timeEnd('dashboard:parallelSections');
       const sections = {
         todoList,
         propertyAttractivity,
