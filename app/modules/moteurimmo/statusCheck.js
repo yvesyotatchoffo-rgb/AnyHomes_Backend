@@ -40,7 +40,7 @@ async function checkStatusBatch() {
     { $sort: { createdAt: -1 } },
     { $limit: MAX_PER_RUN },
     { $project: {
-        _id: 1, sourceId: 1, raw: 1, status: 1, createdAt: 1,
+        _id: 1, sourceId: 1, raw: 1, status: 1, createdAt: 1, missCount: 1,
         'prop._id': 1, 'prop.price': 1, 'prop.propertyTitle': 1, 'prop.propertyType': 1,
         'prop.images': 1,
     }},
@@ -104,8 +104,48 @@ async function checkStatusBatch() {
           continue;
         }
 
-        // Si l'annonce n'est plus remontée par l'API, on ignore
-        if (!ad || !prop) continue;
+        // ── ARCHIVE si l'API ne retourne plus l'annonce (2 absences consécutives) ──
+        if (!ad) {
+          const missCount = (el.missCount || 0) + 1;
+          if (missCount >= 2 && prop && prop.propertyType !== 'directory') {
+            const lastPrice = prop.price;
+            const agencyName = el.raw?.publisher?.name || null;
+            const options = el.raw?.options || [];
+            let reason = 'removed';
+            if (options.includes('isSoldRented')) reason = 'soldRented';
+            else if (options.includes('isUnderCompromise')) reason = 'underCompromise';
+
+            await db.property.updateOne(
+              { _id: prop._id },
+              { $set: { propertyType: 'directory', updatedAt: new Date() } }
+            );
+            await db.externalListing.updateOne(
+              { _id: el._id },
+              { $set: { status: 'inactive', lastSyncAt: new Date(), missCount: 0 } }
+            );
+
+            await createTimelineIfNeeded(prop._id, userId, 'moteurimmoLeavingMarket', {
+              reason, lastPrice, agencyName, statusBadge: 'directory',
+            });
+
+            console.log(`  [ARCHIVED-MISS] ${prop._id} — ${prop.propertyTitle?.substring(0, 60)} — reason: ${reason} — agency: ${agencyName || 'N/A'}`);
+            changed++;
+          } else if (missCount < 2) {
+            await db.externalListing.updateOne(
+              { _id: el._id },
+              { $set: { missCount } }
+            );
+          }
+          continue;
+        }
+
+        // Reset missCount if ad is found again
+        if (el.missCount) {
+          await db.externalListing.updateOne(
+            { _id: el._id },
+            { $set: { missCount: 0 } }
+          );
+        }
 
         let listingChanged = false;
 
