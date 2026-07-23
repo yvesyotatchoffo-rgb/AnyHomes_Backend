@@ -366,7 +366,8 @@ const buildP2PEstimation = async (userId) => {
   const postalCode = await getReferencePostalCode(userId);
   if (!postalCode) return { ...mockP2PEstimation };
 
-  const query = { zipcode: postalCode, isDeleted: false, addedBy: { $ne: userId } };
+  // Requête simplifiée — l'index { zipcode:1, isDeleted:1 } couvre ce filtre
+  const query = { zipcode: postalCode, isDeleted: false };
 
   const [total, props] = await Promise.all([
     db.property.countDocuments(query),
@@ -1185,7 +1186,7 @@ module.exports = {
         if (lastViewedAt) qs.createdAt = { $gt: new Date(lastViewedAt) };
         return qs;
       };
-      const savedSearches = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).lean();
+      const savedSearches = await db.alerts.find({ user_id: userId, isDeleted: false }).sort({ createdAt: -1 }).limit(5).lean();
       const savedSearchResults = {
         visible: true,
         emptyState: savedSearches.length === 0 ? { message: 'Aucune alerte de recherche', ctaLabel: 'Nouvelle recherche', ctaRoute: '/properties' } : null,
