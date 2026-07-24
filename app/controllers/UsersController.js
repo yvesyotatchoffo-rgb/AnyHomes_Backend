@@ -1831,6 +1831,7 @@ module.exports = {
         query.accountType = accountType;
       }
       const pipeline = [
+        { $match: query },
         {
           $lookup: {
             from: "properties",
@@ -1977,7 +1978,6 @@ module.exports = {
             }
           }
         },
-        { $match: query },
         // { $sort: sortquery },
       ];
 

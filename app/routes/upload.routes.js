@@ -366,6 +366,7 @@ router.post("/importPastTransactions", uploadExcel.single("file"), async (req, r
         }, {});
 
         const mappedRow = mapRowToDoc(lower, keyMap);
+        if (!mappedRow) return;
         // For this upload route we may not have year detection; keep existing behavior if missing
         if (!mappedRow.year) mappedRow.year = 2016;
 

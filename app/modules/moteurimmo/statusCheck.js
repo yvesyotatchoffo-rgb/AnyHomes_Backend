@@ -104,6 +104,32 @@ async function checkStatusBatch() {
           continue;
         }
 
+        // ── ARCHIVE si les données stockées indiquent une deletionDate ──
+        // (l'API peut omettre deletionDate dans les réponses includedIds)
+        const rawDeletionDate = el.raw?.deletionDate;
+        if (!shouldArchive && rawDeletionDate && prop && prop.propertyType !== 'directory') {
+          const lastPrice = prop.price;
+          const agencyName = el.raw?.publisher?.name || null;
+          const options = el.raw?.options || [];
+
+          await db.property.updateOne(
+            { _id: prop._id },
+            { $set: { propertyType: 'directory', updatedAt: new Date() } }
+          );
+          await db.externalListing.updateOne(
+            { _id: el._id },
+            { $set: { status: 'inactive', lastSyncAt: new Date() } }
+          );
+
+          await createTimelineIfNeeded(prop._id, userId, 'moteurimmoLeavingMarket', {
+            reason: 'removed', lastPrice, agencyName, statusBadge: 'directory',
+          });
+
+          console.log(`  [ARCHIVED-RAW] ${prop._id} — ${prop.propertyTitle?.substring(0, 60)} — raw deletionDate: ${rawDeletionDate} — agency: ${agencyName || 'N/A'}`);
+          changed++;
+          continue;
+        }
+
         // ── ARCHIVE si l'API ne retourne plus l'annonce (2 absences consécutives) ──
         if (!ad) {
           const missCount = (el.missCount || 0) + 1;

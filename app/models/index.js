@@ -84,6 +84,7 @@ db.persona = require("./persona.model.js")(mongoose)
 db.referralInvitations = require("./referralInvitation.model.js")(mongoose)
 db.propertyReport = require("./propertyReport.model.js")(mongoose)
 db.proRequest = require("./proRequest.model.js")(mongoose)
+db.invite = require("./invite.model.js")(mongoose)
 
 // Coach IA Models
 db.CoachTriggerDefinition = require("./coachTriggerDefinition.model.js")(mongoose)

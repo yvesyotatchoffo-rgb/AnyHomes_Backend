@@ -74,6 +74,8 @@ function mapRowToDoc(lower, keyMap = defaultKeyMap) {
     doc[modelKey] = value;
   }
 
+  if (!doc.local_type) return null;
+
   // derive numeric and geo fields
   doc.land_value_num = toNumberOrNull(doc.land_value);
   doc.lot1_surface_carrez_num = toNumberOrNull(doc.lot1_surface_carrez);
@@ -162,6 +164,8 @@ async function importFromDirectory(rootDir, years = [], options = {}) {
           else value = value !== null ? String(value) : null;
           doc[modelKey] = value;
         }
+
+        if (!doc.local_type) return;
 
         // derive numeric and geo fields
         doc.land_value_num = toNumberOrNull(doc.land_value);

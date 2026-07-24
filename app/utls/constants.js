@@ -355,5 +355,6 @@ module.exports = {
     REFERRAL_EMAIL_INVITE: 131,
     // Confirmation de signalement de profil/bien envoyée au signalant
     PROPERTY_REPORT_CONFIRMATION: 132,
+    BUYER_INVITATION: 134,
   }
 };

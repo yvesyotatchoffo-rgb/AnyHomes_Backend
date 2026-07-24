@@ -324,3 +324,16 @@ Error: listen EADDRINUSE: address already in use :::6089
     at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
     at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
 ────────────────────────────────────────────────────────────────────────────────
+[2026-07-24T20:04:11.538Z] [unhandledRejection]
+MongoPoolClearedError: Connection pool for localhost:27017 was cleared because another operation failed with: "connection <monitor> to [::1]:27017 timed out"
+    at ConnectionPool.processWaitQueue (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/cmap/connection_pool.js:483:82)
+    at ConnectionPool.clear (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/cmap/connection_pool.js:253:14)
+    at updateServers (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/topology.js:497:31)
+    at Topology.serverUpdateHandler (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/topology.js:362:9)
+    at Server.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/topology.js:480:77)
+    at Server.emit (node:events:508:20)
+    at markServerUnknown (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/server.js:287:12)
+    at Monitor.<anonymous> (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/server.js:57:51)
+    at Monitor.emit (node:events:508:20)
+    at failureHandler (/Users/yvesyotatchoffo/Mon Drive/Anyhomes/01_Product/01_MVP/Code/Backend/api_bookaro-lovepreet/node_modules/agenda/node_modules/mongodb/lib/sdam/monitor.js:154:17)
+────────────────────────────────────────────────────────────────────────────────

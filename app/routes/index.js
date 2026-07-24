@@ -100,4 +100,7 @@ router.use("/marketplace", require("../modules/services-marketplace/routes/publi
 router.use("/pro/marketplace", require("../modules/services-marketplace/routes/pro"));
 router.use("/admin/marketplace", require("../modules/services-marketplace/routes/admin"));
 
+// ── Buyer Invitation ─────────────────────────────────────────────────────
+router.use("/api/invite", require("./invite.routes"));
+
 module.exports = router;
