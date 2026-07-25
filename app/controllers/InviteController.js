@@ -11,7 +11,7 @@ const User = db.users;
 exports.create = async (req, res) => {
   try {
     const { propertyId, email, funnelStage } = req.body;
-    const ownerId = req.user._id;
+    const ownerId = req.identity._id;
 
     if (!propertyId || !funnelStage) {
       return res.status(400).json({ success: false, message: 'propertyId and funnelStage are required' });
@@ -104,7 +104,7 @@ exports.get = async (req, res) => {
 exports.accept = async (req, res) => {
   try {
     const { token } = req.params;
-    const buyerId = req.user._id;
+    const buyerId = req.identity._id;
 
     const invite = await Invite.findOne({ token, used: false });
     if (!invite) {
@@ -114,6 +114,10 @@ exports.accept = async (req, res) => {
     const property = await Property.findById(invite.propertyId);
     if (!property) {
       return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    if (String(property.addedBy) === String(buyerId)) {
+      return res.status(400).json({ success: false, message: 'You cannot accept an invitation for your own property' });
     }
 
     const existingInterest = await Interest.findOne({

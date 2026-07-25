@@ -69,7 +69,8 @@ module.exports = {
             });
 
             // Créer l'intérêt transactionnel si l'utilisateur est connecté
-            if (userId) {
+            // et qu'il n'est pas le propriétaire du bien
+            if (userId && String(property.addedBy) !== String(userId)) {
                 try {
                     const existing = await db.interests.findOne({
                         propertyId,
