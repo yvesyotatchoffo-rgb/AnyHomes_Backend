@@ -104,4 +104,14 @@ db.importRun = require("./importRun.model.js")(mongoose)
 // Agency reveal tracking (MoteurImmo)
 db.agencyReveal = require("./agencyReveal.model.js")(mongoose)
 
+// Visit folder
+db.visitFolder = require("./visitFolder.model.js")(mongoose)
+
+// Valorization items
+db.valorizationItem = require("./valorizationItem.model.js")(mongoose)
+
+// White-label (marque blanche)
+db.agencyMember = require("./agencyMember.model.js")(mongoose)
+db.agencyHotLeadThreshold = require("./agencyHotLeadThreshold.model.js")(mongoose)
+
 module.exports = db;

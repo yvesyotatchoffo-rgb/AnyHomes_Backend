@@ -73,6 +73,10 @@ async function processJob(job) {
 }
 
 async function processQueuedImages() {
+  if (process.env.DISABLE_IMAGE_DOWNLOADER === 'true') {
+    console.log('Image downloader paused via DISABLE_IMAGE_DOWNLOADER env');
+    return 0;
+  }
   const jobs = await db.mediaJob.find({ status: 'queued' }).limit(MAX_JOBS).lean();
   if (!jobs || jobs.length === 0) {
     console.log('No queued media jobs found');

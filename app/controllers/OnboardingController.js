@@ -32,6 +32,7 @@ const ONBOARDING_ACTIONS_BY_CONFIG = {
     'get_targeted_help',
     'learn_real_estate',
     'build_seller_dossier',
+    'build_visit_dossier',
     'get_personalized_advice',
     'peer_estimation',
   ],
@@ -42,6 +43,7 @@ const ONBOARDING_ACTIONS_BY_CONFIG = {
     'learn_real_estate',
     'get_personalized_advice',
     'peer_estimation',
+    'build_visit_dossier',
   ],
   owner_increase_value: [
     'publish_property_directory',
@@ -266,6 +268,7 @@ module.exports = {
         financial_score_calculated:    ['compute_financial_score_buy', 'compute_financial_score_rent', 'compute_financial_score_passive'],
         service_searched:               ['get_targeted_help'],
         coach_interacted:               ['get_personalized_advice'],
+        visit_dossier_created:           ['build_visit_dossier'],
       };
 
       const toComplete = EVENT_TO_ACTIONS[eventType] || [];
@@ -434,6 +437,28 @@ module.exports = {
         return res.status(200).json({ success: true });
       } catch (err) {
         console.error('Onboarding.markCelebrationSeen', err);
+        return res.status(500).json({ success: false, message: err.message });
+      }
+    },
+
+    markExplainerDone: async (req, res) => {
+      try {
+        const userId = req.identity?.id || req.body.userId;
+        const { type } = req.body;
+        if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+        if (!type || !['sidebar', 'dashboard'].includes(type)) {
+          return res.status(400).json({ success: false, message: 'type must be sidebar or dashboard' });
+        }
+        const field = type === 'sidebar' ? 'explainerSidebarDone' : 'explainerDashboardDone';
+        const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+        await Onboarding.findOneAndUpdate(
+          { userId: uid },
+          { $set: { [field]: true } },
+          { upsert: true, new: true }
+        );
+        return res.status(200).json({ success: true });
+      } catch (err) {
+        console.error('Onboarding.markExplainerDone', err);
         return res.status(500).json({ success: false, message: err.message });
       }
     },

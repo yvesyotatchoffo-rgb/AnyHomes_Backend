@@ -391,6 +391,72 @@ module.exports = {
   },
 
 
+  getCommunityLeaders: async (req, res) => {
+    try {
+      const count = Math.min(Number(req.query.count) || 3, 20);
+      const leaders = await db.peerEstimation.aggregate([
+        { $match: { userId: { $ne: null } } },
+        {
+          $group: {
+            _id: "$userId",
+            estimatedCount: { $sum: 1 },
+            uniqueProperties: { $addToSet: "$propertyId" },
+          },
+        },
+        {
+          $project: {
+            estimatedCount: 1,
+            uniquePropertiesCount: { $size: "$uniqueProperties" },
+          },
+        },
+        { $sort: { estimatedCount: -1 } },
+        { $limit: count },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            _id: 1,
+            estimatedCount: 1,
+            uniquePropertiesCount: 1,
+            "user.username": 1,
+            "user.firstName": 1,
+            "user.lastName": 1,
+            "user.image": 1,
+            "user.city": 1,
+            "user.country": 1,
+          },
+        },
+      ]);
+
+      let data = leaders;
+      if (!data.length) {
+        const users = await db.users
+          .find({})
+          .sort({ createdAt: -1 })
+          .limit(count)
+          .select("username firstName lastName image city country")
+          .lean();
+        data = users.map((u) => ({
+          _id: u._id,
+          estimatedCount: 0,
+          uniquePropertiesCount: 0,
+          user: u,
+        }));
+      }
+
+      return res.status(200).json({ success: true, data, total: data.length });
+    } catch (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+  },
+
   overAllAnalytics: async (req, res) => {
     try {
       // const userId = req.identity.id;

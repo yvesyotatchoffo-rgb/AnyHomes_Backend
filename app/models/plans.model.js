@@ -92,7 +92,10 @@ module.exports = (mongoose) => {
       dailyCampaignLimit: { type: Number },
       weeklyCampaignLimit: { type: Number },
       monthlyCampaignLimit: { type: Number },
-      profileInPro: { type: Boolean } // key to show the availability in Profile section
+      profileInPro: { type: Boolean }, // key to show the availability in Profile section
+      // White-label (marque blanche)
+      whiteLabelEnabled: { type: Boolean, default: false },
+      whiteLabelMaxLeads: { type: Number, default: 50 },
     },
     { timestamps: true }
   );

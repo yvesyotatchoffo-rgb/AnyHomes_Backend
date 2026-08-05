@@ -100,7 +100,19 @@ router.use("/marketplace", require("../modules/services-marketplace/routes/publi
 router.use("/pro/marketplace", require("../modules/services-marketplace/routes/pro"));
 router.use("/admin/marketplace", require("../modules/services-marketplace/routes/admin"));
 
+// ── Valorization Items (Property Highlights) ─────────────────────────
+router.use("/valorization-item", require("./valorizationItem.routes"));
+
+// ── Visit Folder ─────────────────────────────────────────────────────
+router.use("/visit-folder", require("./visitFolder.routes"));
+
 // ── Buyer Invitation ─────────────────────────────────────────────────────
 router.use("/api/invite", require("./invite.routes"));
+
+// ── White-label (Marque Blanche) ──────────────────────────────────────────
+router.use("/api/white-label", require("./whiteLabel.routes"));
+
+// ── Public (vitrine agence, etc.) ────────────────────────────────────────
+router.use("/api/public", require("./public.routes"));
 
 module.exports = router;

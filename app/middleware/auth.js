@@ -8,6 +8,7 @@ const unprotectedPrefixes = [
   "/marketplace/favorite-pros",
   "/admin/referrals/", // Referral admin analytics
   "/img/",            // Static images — served publicly, no auth needed
+  "/api/public/",      // Public endpoints (vitrine agence, etc.)
 ];
 
 module.exports = async (req, res, next) => {

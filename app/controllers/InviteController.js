@@ -35,7 +35,7 @@ exports.create = async (req, res) => {
     if (email) {
       const owner = await User.findById(ownerId);
       const image = property.images?.[0]?.file || '';
-      const imageUrl = image.startsWith('http') ? image : `${frontUrl}/${image}`;
+      const imageUrl = image.startsWith('http') ? image : `${frontUrl}/img/${image}`;
 
       await sendEmail({
         module: 'AUTH',

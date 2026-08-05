@@ -8,5 +8,6 @@ router.put('/profile', onboarding.updateProfile);
 router.put('/objective', onboarding.updateObjective);
 router.post('/event', onboarding.sendEvent);
 router.post('/celebration-seen', onboarding.markCelebrationSeen);
+router.post('/explainer/done', onboarding.markExplainerDone);
 
 module.exports = router;

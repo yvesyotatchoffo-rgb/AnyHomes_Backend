@@ -79,6 +79,7 @@ app.use(express.static("public"));
 //Adding Middleware for authenticate request
 app.use("/", require("./app/middleware/auth"));
 app.use("/", require("./app/middleware/responseTimeMiddleware"));
+app.use("/", require("./app/middleware/emailContext"));
 
 const db = require("./app/models");
 

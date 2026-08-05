@@ -171,6 +171,12 @@ module.exports = {
             planType: user.planType,
             planDuration: user.planDuration,
             isBlocked: user.isBlocked,
+            // Marque blanche
+            whiteLabelActive: user.whiteLabelActive,
+            agencySlug: user.agencySlug,
+            agencyName: user.agencyName,
+            sidebarColor: user.sidebarColor,
+            buttonColor: user.buttonColor,
           },
           // Onglet 2 : Profil entreprise
           companyProfile: {

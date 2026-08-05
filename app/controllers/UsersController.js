@@ -307,6 +307,7 @@ module.exports = {
         });
         return res.status(400).json({
           success: true,
+          accountNotVerified: true,
           message: "Your account is not verified. Please verify your account."
         })
       }
@@ -1682,7 +1683,7 @@ module.exports = {
   },
   getAllUsers: async (req, res) => {
     try {
-      let { search, sortBy, page, count, status, role, country, amenities } =
+      let { search, sortBy, page, count, status, role, country, amenities, accountType, whiteLabelActive, whiteLabelAgencyId, whiteLabel } =
         req.query;
       let query = {};
       if (search) {
@@ -1707,6 +1708,18 @@ module.exports = {
         query["amenities._id"] =
           mongoose.Types.ObjectId.createFromHexString(amenities);
       }
+      if (accountType) {
+        query.accountType = accountType;
+      }
+      if (whiteLabelActive === "true") {
+        query.whiteLabelActive = true;
+      }
+      if (whiteLabelAgencyId) {
+        query.whiteLabelAgencyId = new mongoose.Types.ObjectId(whiteLabelAgencyId);
+      }
+      if (whiteLabel === "true") {
+        query.whiteLabelAgencyId = { $ne: null };
+      }
 
       let sortquery = {};
       if (sortBy) {
@@ -1717,14 +1730,20 @@ module.exports = {
       }
 
       const pipeline = [
-        // {
-        //   $lookup: {
-        //     from: "amenities",
-        //     localField: "amenities",
-        //     foreignField: "_id",
-        //     as: "amenitiesDetails",
-        //   },
-        // },
+        // Populate agency name for white-label users
+        {
+          $lookup: {
+            from: "users",
+            localField: "whiteLabelAgencyId",
+            foreignField: "_id",
+            as: "wlAgency",
+          },
+        },
+        {
+          $addFields: {
+            agencyName: { $ifNull: ["$agencyName", { $arrayElemAt: ["$wlAgency.agencyName", 0] }] },
+          },
+        },
         {
           $project: {
             id: "$_id",
@@ -1734,18 +1753,29 @@ module.exports = {
             dialCode: "$dialCode",
             mobileNo: "$mobileNo",
             fullName: "$fullName",
+            firstName: "$firstName",
+            lastName: "$lastName",
             address: "$address",
             image: "$image",
             country: "$country",
             pinCode: "$pinCode",
             status: "$status",
             role: "$role",
+            accountType: "$accountType",
             createdAt: "$createdAt",
             updatedAt: "$updatedAt",
             addedBy: "$addedBy",
             isDeleted: "$isDeleted",
-            // amenities: "$amenitiesDetails",
             images: "$images",
+            // White-label fields
+            agencyName: "$agencyName",
+            agencySlug: "$agencySlug",
+            agencyLogo: "$agencyLogo",
+            sidebarColor: "$sidebarColor",
+            buttonColor: "$buttonColor",
+            whiteLabelActive: "$whiteLabelActive",
+            whiteLabelMaxLeads: "$whiteLabelMaxLeads",
+            whiteLabelAgencyId: "$whiteLabelAgencyId",
           },
         },
         { $match: query },
@@ -1792,6 +1822,19 @@ module.exports = {
         profileInPro,
       } = req.query;
       let query = {};
+
+      // White-label : exclure les autres agences
+      const userId = req.identity?.id || req.query.userId || req.body.userId;
+      if (userId) {
+        try {
+          const currentUser = await Users.findById(userId).lean();
+          if (currentUser?.whiteLabelAgencyId) {
+            query._id = { $ne: currentUser.whiteLabelAgencyId };
+            query.whiteLabelActive = { $ne: true };
+          }
+        } catch (e) { /* non-bloquant */ }
+      }
+
       if (search) {
         query.$or = [
           { fullName: { $regex: search, $options: "i" } },
@@ -1838,6 +1881,7 @@ module.exports = {
             let: { userId: "$_id" },
             pipeline: [
               { $match: { $expr: { $eq: ["$addedBy", "$$userId"] } } },
+              { $limit: 100 },
               { $project: { propertyType: 1 } },
             ],
             as: "propertyDetail",
@@ -1994,10 +2038,14 @@ module.exports = {
       }
       pipeline.push({ $sort: sortquery });
 
-      // const total = await Users.countDocuments(query);
-      const totalPipeline = [...pipeline, { $count: "count" }];
-      const totalResult = await Users.aggregate(totalPipeline).option({ allowDiskUse: true });
-      const total = totalResult.length > 0 ? totalResult[0].count : 0;
+      let total;
+      if (profileInPro === "true") {
+        const totalPipeline = [...pipeline, { $count: "count" }];
+        const totalResult = await Users.aggregate(totalPipeline).option({ allowDiskUse: true });
+        total = totalResult.length > 0 ? totalResult[0].count : 0;
+      } else {
+        total = await Users.countDocuments(query);
+      }
 
       if (page && count) {
         let skipNo = (Number(page) - 1) * Number(count);
@@ -3742,6 +3790,17 @@ module.exports = {
       data.username = `${_firstName} ${_lastName.charAt(0).toUpperCase()}.`.trim();
 
       const createdUser = await Users.create(data);
+
+      // White-label attribution — if agency slug was supplied, attribute the signup
+      const agencySlug = req.body.agency || req.query.agency || null;
+      if (agencySlug && !createdUser.whiteLabelAgencyId) {
+        const agency = await Users.findOne({ agencySlug, whiteLabelActive: true, accountType: 'pro' }).lean();
+        if (agency) {
+          createdUser.whiteLabelAgencyId = agency._id;
+          createdUser.whiteLabelInvitedBy = agency._id;
+          await createdUser.save();
+        }
+      }
 
       // Referral attribution — if a ref code was supplied, attribute the signup
       const refCode = req.body.ref || req.query.ref || null;

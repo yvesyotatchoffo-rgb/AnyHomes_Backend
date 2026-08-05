@@ -302,6 +302,18 @@ exports.listFavoritePros = async (req, res) => {
   try {
     const postalCode = req.query.postalCode || null;
     const filter = { accountType: 'pro', isDeleted: false, status: 'active' };
+
+    // White-label : exclure les autres agences
+    const userId = req.identity?.id || req.query.userId || req.body.userId;
+    if (userId) {
+      try {
+        const currentUser = await Users.findById(userId).lean();
+        if (currentUser?.whiteLabelAgencyId) {
+          filter._id = { $ne: currentUser.whiteLabelAgencyId };
+          filter.whiteLabelActive = { $ne: true };
+        }
+      } catch (e) { /* non-bloquant */ }
+    }
     const pros = await Users.find(filter).select(
       'firstName lastName fullName phone mobileNo image avatar accountType status isGlobalFavorite isLocalFavorite isTopAgent localFavoritePostalCodes featuredSubheading featuredTitle featuredBio featuredExperienceYears featuredClientsAccompanied featuredRatingNotes featuredSatisfactionRate featuredProfilePhoto'
     );
@@ -341,6 +353,18 @@ exports.listServices = async (req, res) => {
     } = req.query;
 
     const filter = { status: 'active' };
+
+    // White-label : filtrer par agence
+    const userId = req.identity?.id || req.query.userId || req.body.userId;
+    if (userId) {
+      try {
+        const currentUser = await Users.findById(userId).lean();
+        if (currentUser?.whiteLabelAgencyId) {
+          filter.pro = currentUser.whiteLabelAgencyId;
+        }
+      } catch (e) { /* non-bloquant */ }
+    }
+
     if (category) filter.category = category;
     if (city) filter.city = { $regex: city, $options: 'i' };
     if (location) filter.city = { $regex: location, $options: 'i' };

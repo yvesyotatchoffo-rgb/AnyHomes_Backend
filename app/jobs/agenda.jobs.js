@@ -140,6 +140,10 @@ module.exports = (agenda, db) => {
     const { processQueuedImages } = require("../../scripts/image_downloader");
 
     agenda.define("image-downloader", async (job) => {
+      if (process.env.DISABLE_IMAGE_DOWNLOADER === 'true') {
+        console.log('Image downloader job skipped — paused via env');
+        return;
+      }
       try {
         const processed = await processQueuedImages();
         console.log(`Image downloader: processed ${processed} jobs`);

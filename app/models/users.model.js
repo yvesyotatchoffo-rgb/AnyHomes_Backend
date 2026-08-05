@@ -122,6 +122,18 @@ module.exports = (mongoose) => {
       unread_notifications_count: Number,
       kwh: String,
       team: { type: Array, default: [] },
+
+      // White-label (marque blanche) — champs pour les agences
+      agencyName: { type: String },
+      agencySlug: { type: String, unique: true, sparse: true },
+      agencyLogo: { type: String },
+      sidebarColor: { type: String, default: '#976DD0' },
+      buttonColor: { type: String, default: '#976DD0' },
+      whiteLabelActive: { type: Boolean, default: false },
+      whiteLabelMaxLeads: { type: Number, default: 50 },
+      // Pour les leads inscrits via une agence
+      whiteLabelAgencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'users', default: null },
+      whiteLabelInvitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'users', default: null },
       renterFiles: Object,
       declarativeRenterFiles: {
         postalCode: String,

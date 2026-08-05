@@ -14,6 +14,8 @@ router.get("/detail/campaign", peerCampaign.getCampaignDetail);
 
 router.get("/analytics", peerCampaign.overAllAnalytics);
 
+router.get("/leaders", peerCampaign.getCommunityLeaders);
+
 router.post("/purchase/campaign", peerCampaign.purchaseCampaign)
 
 router.get("/download/campaign", peerCampaign.downloadCampaign);

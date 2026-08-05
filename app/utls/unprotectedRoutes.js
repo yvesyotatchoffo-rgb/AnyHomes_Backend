@@ -100,7 +100,9 @@ module.exports = {
     "/property/batch-status",
     "/school-types/list",
     "/school-types/seed",
-    "/schools/list"
+    "/schools/list",
+    // Public — vitrine agence
+    "/api/public/agency"
   ],
 };
 

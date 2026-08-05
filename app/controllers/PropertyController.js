@@ -4860,6 +4860,118 @@ module.exports = {
     }
   },
 
+  getTopSocialProperties: async (req, res) => {
+    try {
+      const count = Math.min(Number(req.query.count) || 3, 20);
+      const toScore = (n) => Number(n) || 0;
+
+      // Candidats les plus aimés
+      const liked = await db.favorites.aggregate([
+        { $match: { like: true, property_id: { $ne: null } } },
+        { $group: { _id: "$property_id", likeCount: { $sum: 1 } } },
+        { $sort: { likeCount: -1 } },
+        { $limit: 60 },
+      ]);
+
+      // Candidats les plus suivis
+      const followed = await db.followUnfollow.aggregate([
+        { $match: { follow_unfollow: true, property_id: { $ne: null } } },
+        { $group: { _id: "$property_id", followerCount: { $sum: 1 } } },
+        { $sort: { followerCount: -1 } },
+        { $limit: 60 },
+      ]);
+
+      const scoreMap = new Map();
+      liked.forEach((r) => scoreMap.set(String(r._id), { likeCount: toScore(r.likeCount), followerCount: 0 }));
+      followed.forEach((r) => {
+        const cur = scoreMap.get(String(r._id)) || { likeCount: 0, followerCount: 0 };
+        cur.followerCount = toScore(r.followerCount);
+        scoreMap.set(String(r._id), cur);
+      });
+
+      const ids = [...scoreMap.keys()]
+        .map((id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null))
+        .filter(Boolean);
+
+      let props = [];
+      if (ids.length) {
+        props = await Property.find({ _id: { $in: ids }, isDeleted: false, status: "active" })
+          .populate("addedBy", "fullName firstName lastName username accountType image companyName companyLogo featuredProfilePhoto")
+          .lean();
+      }
+
+      // Repli : si aucun bien actif avec de l'activité, renvoyer les plus récents
+      if (!props.length) {
+        const fallback = await Property.find({ isDeleted: false, status: "active" })
+          .populate("addedBy", "fullName firstName lastName username accountType image companyName companyLogo featuredProfilePhoto")
+          .sort({ createdAt: -1 })
+          .limit(count)
+          .lean();
+        const fallbackData = fallback.map((p) => ({
+          ...p,
+          addedBy_details: p.addedBy && p.addedBy._id ? p.addedBy : null,
+          addedBy: p.addedBy && p.addedBy._id ? p.addedBy._id : p.addedBy,
+          likeCount: toScore(p.likeCount),
+          followerCount: 0,
+          shareCount: toScore(p.shareCount),
+          propertyViewerCount: toScore(p.propertyViewerCount),
+        }));
+        return res.json({ success: true, data: fallbackData, total: fallbackData.length });
+      }
+
+      const enriched = props.map((p) => {
+        const s = scoreMap.get(String(p._id)) || { likeCount: 0, followerCount: 0 };
+        const shareCount = toScore(p.shareCount);
+        const propertyViewerCount = toScore(p.propertyViewerCount);
+        const owner = p.addedBy && p.addedBy._id ? p.addedBy : null;
+        return {
+          ...p,
+          addedBy_details: owner,
+          addedBy: owner ? owner._id : p.addedBy,
+          likeCount: s.likeCount,
+          followerCount: s.followerCount,
+          shareCount,
+          propertyViewerCount,
+          socialScore: s.likeCount + s.followerCount + shareCount + propertyViewerCount,
+          favourite_details: false,
+          followunfollows_details: false,
+        };
+      });
+
+      enriched.sort((a, b) => b.socialScore - a.socialScore);
+      const data = enriched.slice(0, count);
+      return res.json({ success: true, data, total: data.length });
+    } catch (error) {
+      return handleServerError(res, error, "Top social properties");
+    }
+  },
+
+  getLatestProperties: async (req, res) => {
+    try {
+      const count = Math.min(Number(req.query.count) || 3, 20);
+      const toScore = (n) => Number(n) || 0;
+      const props = await Property.find({ isDeleted: false, status: "active" })
+        .populate("addedBy", "fullName firstName lastName username accountType image companyName companyLogo featuredProfilePhoto")
+        .sort({ createdAt: -1 })
+        .limit(count)
+        .lean();
+      const data = props.map((p) => ({
+        ...p,
+        addedBy_details: p.addedBy && p.addedBy._id ? p.addedBy : null,
+        addedBy: p.addedBy && p.addedBy._id ? p.addedBy._id : p.addedBy,
+        likeCount: toScore(p.likeCount),
+        followerCount: 0,
+        shareCount: toScore(p.shareCount),
+        propertyViewerCount: toScore(p.propertyViewerCount),
+        favourite_details: false,
+        followunfollows_details: false,
+      }));
+      return res.json({ success: true, data, total: data.length });
+    } catch (error) {
+      return handleServerError(res, error, "Latest properties");
+    }
+  },
+
   getActivityStats: async (req, res) => {
     try {
       const propertyId = req.params.id;

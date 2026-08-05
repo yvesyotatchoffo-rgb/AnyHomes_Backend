@@ -877,6 +877,22 @@ const buildOwnerPipeline = async (userId) => {
               $cond: [{ $in: ['$funnelStatus', ['visit hosted', 'review submit by user', 'buyer requested for document', 'document send by owner', 'offer submit by user', 'confirmation by user', 'renter assigned', 'application submit by user', 'transferred']] }, 1, 0],
             },
           },
+          maxFunnelStep: {
+            $max: {
+              $switch: {
+                branches: [
+                  { case: { $in: ['$funnelStatus', ['interest sent', 'invite user for a visit', 'owner changed the slot', 'request to change the visit slot', 'slot booked by user', 'visit accept by user']] }, then: 1 },
+                  { case: { $eq: ['$funnelStatus', 'visit hosted'] }, then: 2 },
+                  { case: { $in: ['$funnelStatus', ['review submit by user', 'buyer requested for document', 'document send by owner', 'owner reject the application']] }, then: 3 },
+                  { case: { $in: ['$funnelStatus', ['application submit by user', 'owner accept the application', 'offer sent', 'offer submit by user', 'offer submit by owner', 'offer accept by owner', 'offer accept by user', 'offer refused by owner', 'offer refused by user']] }, then: 4 },
+                  { case: { $in: ['$funnelStatus', ['preslot opened by owner', 'home inventory opened by owner', 'request to change the pre-sale slot', 'preslot booked by user', 'signing date booked by owner']] }, then: 5 },
+                  { case: { $in: ['$funnelStatus', ['request to change the home inventory slot', 'preslot accept by user', 'preslot accept by owner', 'home inventory accept by user', 'contract signed by user', 'contract signed by owner', 'saleslot booked by owner', 'saleslot booked by user', 'request to change the final signing slot', 'owner changed the final signing slot', 'saleslot accept by user']] }, then: 6 },
+                  { case: { $in: ['$funnelStatus', ['confirmation by owner', 'renter assigned', 'transferred', 'renter transfered', 'confirmation by user']] }, then: 7 },
+                ],
+                default: 0,
+              },
+            },
+          },
           visitReviews: { $sum: { $cond: [{ $eq: ['$funnelStatus', 'review submit by user'] }, 1, 0] } },
           offersReceived: {
             $sum: { $cond: [{ $in: ['$funnelStatus', ['offer submit by user', 'confirmation by user', 'transferred']] }, 1, 0] },
@@ -925,6 +941,7 @@ const buildOwnerPipeline = async (userId) => {
         visitReviewsReceived: reviewMap[String(p._id)] || 0,
         offerReceived: isRent ? 0 : (m.offersReceived || 0),
         applicationReceived: isRent ? (m.applicationsReceived || 0) : 0,
+        maxFunnelStep: m.maxFunnelStep || 0,
       },
     };
   });
@@ -966,6 +983,7 @@ const mockOwnerPipeline = {
         visitReviewsReceived: 5,
         offerReceived: 3,
         applicationReceived: 0,
+        maxFunnelStep: 4,
       },
     },
     {
@@ -991,6 +1009,7 @@ const mockOwnerPipeline = {
         visitReviewsReceived: 4,
         offerReceived: 0,
         applicationReceived: 2,
+        maxFunnelStep: 4,
       },
     },
   ],

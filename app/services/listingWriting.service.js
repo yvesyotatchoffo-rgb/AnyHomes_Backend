@@ -73,6 +73,13 @@ RÈGLES ESSENTIELLES :
 - Adapte le vocabulaire à la cible et à l'ambition données.
 - Le texte doit être lisible, stable et cohérent d'un profil de bien à l'autre.
 
+RÈGLE ABSOLUE — INTERDICTION DE TITRE HALLUCINÉ :
+- Le titre NE DOIT JAMAIS contenir de qualificatifs vagues, émotifs ou non vérifiables comme "de rêve", "rêvé", "exceptionnel", "unique", "superbe", "magnifique", "remarquable", "prestige", "rare".
+- Le titre DOIT obligatoirement contenir des éléments factuels issus des données fournies : au minimum le type de bien ET la ville. Si la surface est fournie, l'inclure également.
+- Le titre doit suivre le format factuel : "Type + ville + surface" ou "Type + ville + caractéristique factuelle". Exemples VALIDES : "Appartement 3 pièces à Lyon", "Maison avec jardin à Bordeaux 60m²". Exemples INTERDITS : "Appartement de rêve", "Superbe maison à vendre", "Exceptionnel duplex".
+- Si plusieurs données sont disponibles, combine-les de façon factuelle sans ajouter d'émotion.
+- N'invente JAMAIS de caractéristique qui n'est pas dans les données. Ne qualifie jamais le bien avec des mots qui ne peuvent pas être prouvés par les données.
+
 STRUCTURE OBLIGATOIRE (7 blocs dans cet ordre) :
 1. Identité du bien
 2. Configuration
@@ -213,7 +220,7 @@ ${contextJson}
 
 OUTPUT JSON ATTENDU (UNIQUEMENT ce JSON valide, rien d'autre) :
 {
-  "title": "Titre accrocheur (60-100 caractères) - NE PAS mettre ce texte dans description_blocks.identity_hook ni dans description_full",
+  "title": "Titre FACTUEL (60-100 caractères) basé UNIQUEMENT sur les données fournies : type + ville (+ surface si disponible) — NE PAS mettre ce texte dans description_blocks.identity_hook ni dans description_full",
   "description_blocks": {
     "identity_hook": "Bloc 1 - Identité du bien (1-2 phrases, NE PAS répéter le titre ici)",
     "property_configuration": "Bloc 2 - Configuration (1-3 phrases)",
@@ -235,20 +242,23 @@ OUTPUT JSON ATTENDU (UNIQUEMENT ce JSON valide, rien d'autre) :
 RÈGLE ABSOLUE SUR LE TITLE :
 1. Le champ "title" du JSON est le titre PRINCIPAL. Il est STRICTEMENT INTERDIT de le répéter dans identity_hook, description_full ou tout autre champ.
 2. identity_hook est le premier paragraphe de la description, PAS le titre. Il commence directement par la description du bien.
+3. Le titre DOIT être FACTUEL et basé UNIQUEMENT sur les champs fournis dans DONNÉES DU BIEN. Il doit contenir au minimum le type et la ville. Exemples VALIDES : "Appartement 3 pièces à Lyon 65m²", "Maison avec jardin à Bordeaux".
+4. INTERDICTION FORMELLE des mots vagues et émotifs dans le titre : "de rêve", "rêvé", "exceptionnel", "unique", "superbe", "magnifique", "remarquable", "prestige", "rare", "idéal", "parfait", "coup de cœur". Le titre ne doit contenir que des faits vérifiables dans les données.
+5. Si la surface est disponible dans les données, elle DOIT apparaître dans le titre. Si le nombre de pièces est disponible, il DOIT apparaître dans le titre.
 
 RÈGLES DE NOMBRE DE MOTS PAR BLOC :
-3. Bloc 1 (identity_hook) : 25 à 45 mots
-4. Bloc 2 (property_configuration) : 35 à 70 mots
-5. Bloc 3 (immediate_highlights) : 35 à 70 mots
-6. Bloc 4 (living_environment) : 35 à 70 mots
-7. Bloc 5 (usage_comfort_performance) : 70 à 140 mots
-8. Bloc 6 (target_positioning) : 45 à 90 mots
-9. Bloc 7 (open_closure) : 20 à 40 mots
+6. Bloc 1 (identity_hook) : 25 à 45 mots
+7. Bloc 2 (property_configuration) : 35 à 70 mots
+8. Bloc 3 (immediate_highlights) : 35 à 70 mots
+9. Bloc 4 (living_environment) : 35 à 70 mots
+10. Bloc 5 (usage_comfort_performance) : 70 à 140 mots
+11. Bloc 6 (target_positioning) : 45 à 90 mots
+12. Bloc 7 (open_closure) : 20 à 40 mots
 
 RÈGLES DE FORMATAGE :
-10. description_full en HTML valide : <strong>Titre du bloc</strong><p>Contenu...</p>
-11. <strong> pour les 2-3 éléments saillants par bloc (revenus, travaux, notes, jardin, DPE).
-12. N'invente aucune donnée absente. Le bloc 5 est le plus riche.`;
+13. description_full en HTML valide : <strong>Titre du bloc</strong><p>Contenu...</p>
+14. <strong> pour les 2-3 éléments saillants par bloc (revenus, travaux, notes, jardin, DPE).
+15. N'invente aucune donnée absente. Le bloc 5 est le plus riche.`;
 };
 
 class ListingWritingService {
