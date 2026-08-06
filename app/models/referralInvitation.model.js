@@ -17,6 +17,7 @@ module.exports = (mongoose) => {
         // Accepts: sidebar, dashboard, profile, unknown, or toast-* (e.g., toast-after-signup, toast-after-property-created)
       },
       recipientHash: { type: String, default: null }, // hashed email if provided (SHA-256)
+      recipientEmail: { type: String, default: null }, // plaintext recipient email (email channel only)
       personalMessage: { type: String, default: null, maxlength: 300 }, // optional message typed by inviter
       status: {
         type: String,
