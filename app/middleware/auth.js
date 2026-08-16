@@ -26,6 +26,13 @@ module.exports = async (req, res, next) => {
     next();
     return;
   }
+  // Dossier de visite : le téléchargement du PDF s'authentifie via ?token= dans getPdf.
+  // Seul ce chemin est autorisé à passer sans header (l'autorisation est revalidée dans le contrôleur).
+  const isVisitFolderPdf = /^\/visit-folder\/[^/]+\/pdf$/.test(url[0]);
+  if (isVisitFolderPdf && req.query && req.query.token) {
+    next();
+    return;
+  }
   const isGuestMode =
     req.headers["x-guest-mode"] === "true" ||
     req.query.guest === "true" ||

@@ -192,12 +192,13 @@ class CoachController {
   async getMessageHistory(req, res) {
     try {
       const { user_id } = req.params;
-      const { coach_intent, coach_need_family, months, property_id } = req.query;
+      const { coach_intent, coach_need_family, months, property_id, source } = req.query;
 
       const records = await coachService.getMessageHistory(user_id, {
         coach_intent,
         coach_need_family,
         property_id: property_id || null,
+        source: source || null,
         months: months ? parseInt(months) : 12,
       });
 
@@ -207,6 +208,7 @@ class CoachController {
         count: records.length,
         records: records.map((r) => ({
           id: r._id,
+          property_id: r.property_id || null,
           intent: r.coach_intent,
           family: r.coach_need_family,
           sent_at: r.sent_at,
@@ -279,7 +281,7 @@ class CoachController {
    */
   async askCoach(req, res) {
     try {
-      const { user_id, property_id, question, transaction_type } = req.body;
+      const { user_id, property_id, question, transaction_type, source } = req.body;
 
       if (!user_id || !question) {
         return res.status(400).json({
@@ -322,6 +324,7 @@ class CoachController {
         user_question: question,
         user_id,
         property_id,
+        source,
       });
 
       res.status(201).json({

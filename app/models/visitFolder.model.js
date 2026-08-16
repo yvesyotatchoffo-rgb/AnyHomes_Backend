@@ -23,8 +23,23 @@ const visitFolderSchema = new Schema(
     editableContent: {
       visitHighlights: { type: String, default: "" },
       neighborhood: { type: String, default: "" },
+      practicalLife: { type: String, default: "" },
+      condominium: { type: String, default: "" },
+      price: { type: String, default: "" },
+      spaces: [
+        {
+          label: { type: String, default: "" },
+          surface: { type: String, default: "" },
+        },
+      ],
       valorizationItems: [{ type: Schema.Types.ObjectId, ref: "valorizationitems" }],
       selectedDocumentIds: [{ type: String }],
+      plans: [
+        {
+          fileName: { type: String, default: "" },
+          originalname: { type: String, default: "" },
+        },
+      ],
     },
     generatedSnapshot: {
       cover: { type: Object, default: {} },

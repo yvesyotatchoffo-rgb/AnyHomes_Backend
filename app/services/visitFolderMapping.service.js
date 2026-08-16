@@ -187,6 +187,240 @@ const buildNextStepsSection = () => {
   };
 };
 
+// ─── Espaces mesurables (Page 2 - bloc "Superficie des principaux espaces") ───
+const SPACE_LABELS = [
+  { label: "Salle de bain", key: "bathroom", icon: "Bath" },
+  { label: "Chambre", key: "bedrooms", icon: "BedDouble" },
+  { label: "Séjour", key: "livingRoom", icon: "Sofa" },
+  { label: "Bureau", key: "office", icon: "Briefcase" },
+  { label: "Salle à manger", key: "diningRoom", icon: "Utensils" },
+];
+
+const AMENITY_SPACE_MAP = [
+  { match: /cuisine/i, label: "Cuisine", icon: "ChefHat" },
+  { match: /cave/i, label: "Cave", icon: "Warehouse" },
+  { match: /v.rada/i, label: "Véranda", icon: "Sun" },
+  { match: /jardin/i, label: "Jardin", icon: "Trees" },
+  { match: /terrasse/i, label: "Terrasse", icon: "Sunset" },
+  { match: /balcon/i, label: "Balcon", icon: "Wind" },
+  { match: /buanderie/i, label: "Buanderie", icon: "WashingMachine" },
+  { match: /local.*v.lo|v.lo/i, label: "Local à vélo", icon: "Bike" },
+  { match: /\bbox\b/i, label: "Box", icon: "Package" },
+];
+
+const BOOL_SPACE_MAP = [
+  { field: "attic", label: "Grenier", icon: "Archive" },
+  { field: "garage", label: "Garage", icon: "Car" },
+  { field: "gardenShed", label: "Abri de jardin", icon: "Tent" },
+];
+
+// Liste des espaces "mesurables" détectés sur le bien (compteurs + amenities + booléens).
+const buildAvailableSpaces = (property) => {
+  const spaces = [];
+
+  // Compteurs → espaces numérotés
+  SPACE_LABELS.forEach((def) => {
+    const count = Number(property?.[def.key]);
+    if (count > 0) {
+      for (let i = 1; i <= count; i++) {
+        spaces.push({
+          key: `${def.key}_${i}`,
+          label: count > 1 ? `${def.label} ${i}` : def.label,
+          icon: def.icon,
+        });
+      }
+    }
+  });
+
+  // Amenities cochées (ancilliary / outside / cooking / etc.)
+  const amenityLabels = Array.isArray(property?.amenityLabels) ? property.amenityLabels : [];
+  AMENITY_SPACE_MAP.forEach((def) => {
+    if (amenityLabels.some((l) => def.match.test(String(l).toLowerCase()))) {
+      spaces.push({ key: `am_${def.label}`, label: def.label, icon: def.icon });
+    }
+  });
+
+  // Champs booléens (grenier / garage / abri)
+  BOOL_SPACE_MAP.forEach((def) => {
+    if (property?.[def.field]) {
+      spaces.push({ key: `bool_${def.field}`, label: def.label, icon: def.icon });
+    }
+  });
+
+  return spaces;
+};
+
+// Espaces avec mesure de superficie renseignée (saisis dans la modale).
+const buildMeasuredSpaces = (spaces) => {
+  return (spaces || []).filter((s) => isFilled(s.surface));
+};
+
+// ─── Prestations du bien (Page 2 - bloc 3) ───
+const buildPrestationsSection = (property) => {
+  const items = [];
+
+  if (isFilled(property?.type)) items.push({ icon: "Building2", label: "Type", value: property.type });
+  if (isFilled(property?.propertyFloor)) items.push({ icon: "Layers", label: "Étage", value: property.propertyFloor });
+  if (isFilled(property?.totalFloorBuilding)) items.push({ icon: "Building", label: "Étages de l'immeuble", value: property.totalFloorBuilding });
+  if (isFilled(property?.building)) items.push({ icon: "CalendarClock", label: "Année de construction", value: property.building });
+  if (isFilled(property?.situation)) items.push({ icon: "MapPin", label: "Situation", value: Array.isArray(property.situation) ? property.situation.join(", ") : property.situation });
+  if (isFilled(property?.usedAs)) items.push({ icon: "Tag", label: "Usage", value: property.usedAs });
+
+  const amenityLabels = Array.isArray(property?.amenityLabels) ? property.amenityLabels : [];
+  const PRESTATION_ICONS = [
+    { match: /parking|garage/i, icon: "Car" },
+    { match: /balcon/i, icon: "Wind" },
+    { match: /terrasse/i, icon: "Sunset" },
+    { match: /jardin/i, icon: "Trees" },
+    { match: /piscine/i, icon: "Waves" },
+    { match: /ascenseur/i, icon: "ArrowUpDown" },
+    { match: /s.curit/i, icon: "ShieldCheck" },
+    { match: /interphone/i, icon: "Phone" },
+    { match: /cave/i, icon: "Warehouse" },
+    { match: /cuisine/i, icon: "ChefHat" },
+    { match: /sport/i, icon: "Dumbbell" },
+    { match: /gym/i, icon: "Dumbbell" },
+    { match: /chauffage|gaz/i, icon: "Flame" },
+    { match: /individuel/i, icon: "Flame" },
+    { match: /collectif/i, icon: "Flame" },
+  ];
+  // Normalisation des libellés de prestations
+  const normalizePrestation = (label) => {
+    const l = String(label).trim();
+    if (/^gaz$/i.test(l)) return "Chauffage gaz";
+    if (/^individuel$/i.test(l)) return "Chauffage individuel";
+    if (/^collectif$/i.test(l)) return "Chauffage collectif";
+    return l;
+  };
+  amenityLabels.forEach((label) => {
+    const found = PRESTATION_ICONS.find((p) => p.match.test(String(label).toLowerCase()));
+    items.push({ icon: found ? found.icon : "Sparkles", label: normalizePrestation(label) });
+  });
+
+  if (isFilled(property?.energy_efficient)) items.push({ icon: "Zap", label: "DPE", value: property.energy_efficient });
+  if (isFilled(property?.energyConsumption)) items.push({ icon: "PlugZap", label: "Consommation", value: `${property.energyConsumption} kWh/m²/an` });
+  if (isFilled(property?.emission_efficient)) items.push({ icon: "Leaf", label: "GES", value: property.emission_efficient });
+
+  return { items, visible: items.length > 0 };
+};
+
+// ─── Notations plateformes tierces (Page 5) ───
+const buildExternalRatings = (property, revenueLabels) => {
+  const ratings = [];
+  (property?.rating || []).forEach((r) => {
+    const typeId = r?.type;
+    const platform = (revenueLabels && typeId && revenueLabels[String(typeId)]) || null;
+    if (platform || isFilled(r?.rating_value)) {
+      ratings.push({
+        platform: platform || "Plateforme",
+        rating: r?.rating_value || "",
+      });
+    }
+  });
+  return ratings;
+};
+
+// ─── 5 tableaux chiffrés (Page 5) ───
+// `revenueLabels` : { ObjectIdString -> name } issu de revenueManagement, permet de
+// résoudre les références (renovation_work.title, revenue_detail.type/source, etc.)
+const resolveRefName = (id, revenueLabels, fallback) => {
+  if (!id) return fallback || "";
+  if (typeof id === "string" || typeof id === "object") {
+    const key = String(id);
+    if (revenueLabels && revenueLabels[key]) return revenueLabels[key];
+  }
+  // Si c'est déjà un objet peuplé { name, title, _id } on prend son libellé
+  if (id && typeof id === "object" && (id.name || id.title || id.label)) {
+    return id.name || id.title || id.label;
+  }
+  return fallback || "";
+};
+
+// Facture énergétique estimée (même calcul que le profil du bien).
+const estimateEnergyBill = (surface, dpeClass) => {
+  const pricePerKwh = 0.2516;
+  const ranges = {
+    A: { min: 0, max: 50 }, B: { min: 51, max: 90 }, C: { min: 91, max: 150 },
+    D: { min: 151, max: 230 }, E: { min: 231, max: 330 }, F: { min: 331, max: 450 }, G: { min: 451, max: Infinity },
+  };
+  const cls = String(dpeClass || "").toUpperCase();
+  const r = ranges[cls];
+  const s = Number(surface) || 0;
+  if (!r || s <= 0) return null;
+  const min = Math.floor(r.min * s * pricePerKwh);
+  const max = Math.floor(r.max * s * pricePerKwh);
+  if (cls === "A") return `${formatCurrency(max)} / an (max)`;
+  if (cls === "G") return `${formatCurrency(min)} / an (min)`;
+  return `${formatCurrency(min)} - ${formatCurrency(max)} / an`;
+};
+
+// `priceOverride` : prix/loyer saisi dans la modale (biens en annuaire) ;
+// sinon on retombe sur le prix du bien (backend).
+const buildTablesSection = (property, destination, revenueLabels = {}, priceOverride) => {
+  const tables = [];
+  const displayPrice = priceOverride || (property?.price != null ? String(property.price) : "");
+
+  const bien = [];
+  if (isFilled(displayPrice)) bien.push({ label: destination === "rent" ? "Loyer" : "Prix de vente", value: formatCurrency(displayPrice) });
+  if (isFilled(property?.propertyAgencyFees)) bien.push({ label: "Frais d'agence", value: formatCurrency(property.propertyAgencyFees) });
+  if (isFilled(property?.propertyInventory)) bien.push({ label: "Frais de réalisation de l'état des lieux", value: formatCurrency(property.propertyInventory) });
+  if (isFilled(property?.guaranteeDeposit)) bien.push({ label: "Montant de la caution", value: formatCurrency(property.guaranteeDeposit) });
+  if (isFilled(property?.propertyCharges)) bien.push({ label: "Charges de copropriété", value: formatCurrency(property.propertyCharges) });
+  if (isFilled(displayPrice)) bien.push({ label: "Estimation des frais de notaire", value: formatCurrency(Math.floor(Number(displayPrice) * 0.08)) });
+  if (bien.length) tables.push({ key: "bien", title: "Le bien", rows: bien });
+
+  const energie = [];
+  const energyBill = estimateEnergyBill(property?.surface, property?.energy_efficient);
+  if (energyBill) energie.push({ label: "Facture énergétique estimée", value: energyBill });
+  if (isFilled(property?.energy_efficient)) energie.push({ label: "DPE", value: property.energy_efficient });
+  if (isFilled(property?.energyConsumption)) energie.push({ label: "Consommation", value: property.energyConsumption + " kWh/m²/an" });
+  if (isFilled(property?.emission_efficient)) energie.push({ label: "GES", value: property.emission_efficient });
+  if (isFilled(property?.emissions)) energie.push({ label: "Émissions", value: property.emissions + " kg CO₂/m²/an" });
+  if (isFilled(property?.heatingType?.title)) energie.push({ label: "Chauffage", value: property.heatingType.title });
+  if (isFilled(property?.energymode?.title)) energie.push({ label: "Énergie", value: property.energymode.title });
+  if (energie.length) tables.push({ key: "energie", title: "Énergie", rows: energie });
+
+  if (destination !== "rent" && shouldShowCriticalSection(property?.revenue_detail)) {
+    tables.push({
+      key: "revenus",
+      title: "Revenus",
+      rows: property.revenue_detail.map((r) => {
+        const typeName = resolveRefName(r?.type, revenueLabels, "");
+        const year = r?.year ? `Année ${r.year}` : "Année —";
+        const label = typeName ? `${year} — ${typeName}` : year;
+        return { label, value: r?.price ? formatCurrency(r.price) : "" };
+      }),
+    });
+  }
+
+  if (shouldShowCriticalSection(property?.Expenses)) {
+    tables.push({
+      key: "depenses",
+      title: "Dépenses courantes",
+      rows: property.Expenses.map((e) => {
+        const name = resolveRefName(e?.type, revenueLabels, "Dépense");
+        const year = e?.year ? ` (${e.year})` : "";
+        return { label: `${name}${year}`, value: e?.price ? formatCurrency(e.price) : "" };
+      }),
+    });
+  }
+
+  if (shouldShowCriticalSection(property?.renovation_work)) {
+    tables.push({
+      key: "travaux",
+      title: "Travaux et rénovations",
+      rows: property.renovation_work.map((w) => {
+        const typeName = resolveRefName(w?.title, revenueLabels, "Travaux");
+        const date = w?.renovationDate ? new Date(w.renovationDate).toLocaleDateString("fr-FR") : "";
+        const parts = [typeName, w?.description, date].filter(Boolean);
+        return { label: parts.join(" — "), value: w?.price ? formatCurrency(w.price) : "" };
+      }),
+    });
+  }
+
+  return { tables, visible: tables.length > 0 };
+};
+
 const buildSnapshot = (property, destination, selectedPhotos) => {
   return {
     cover: buildCoverSection(property),
@@ -208,4 +442,9 @@ module.exports = {
   shouldShowEngagementBlock,
   formatCurrency,
   formatNumber,
+  buildAvailableSpaces,
+  buildMeasuredSpaces,
+  buildPrestationsSection,
+  buildExternalRatings,
+  buildTablesSection,
 };

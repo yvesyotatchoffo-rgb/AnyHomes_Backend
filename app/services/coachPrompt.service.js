@@ -251,7 +251,10 @@ class CoachPromptService {
       const priceInstruction = isPriceQuery
         ? `\nATTENTION - Question sur les PRIX/MARCHÉ : donne des fourchettes approximatives basées sur ton entraînement. Indique CLAIREMENT dans l'intro que ces données datent d'environ début 2024 et peuvent avoir évolué. Recommande DVF (data.gouv.fr/dvf), Meilleurs Agents ou les Notaires de France pour les prix actuels.`
         : '';
-      const userPrompt = `Question posée par l'utilisateur : "${question}"${draftInstruction}${priceInstruction}\n\nTu dois répondre directement et précisément à cette question.\n\n${template.instruction}\n\nGénère une réponse JSON qui répond EXACTEMENT à cette question.`;
+      const propertyInstruction = context_data.property_context
+        ? `\nCONTEXTE DU BIEN concerné par la question (utilise ces caractéristiques pour contextualiser ta réponse, sans les répéter mot pour mot si elles ne sont pas pertinentes) :\n${context_data.property_context}\n`
+        : '';
+      const userPrompt = `Question posée par l'utilisateur : "${question}"${draftInstruction}${priceInstruction}${propertyInstruction}\n\nTu dois répondre directement et précisément à cette question.\n\n${template.instruction}\n\nGénère une réponse JSON qui répond EXACTEMENT à cette question.`;
       logger.debug("Prompt built for intent", { coach_intent, transaction_type, contextKeys: Object.keys(context_data) });
       return { system: SYSTEM_PROMPT, user_prompt: userPrompt.trim(), output_schema: OUTPUT_SCHEMA };
     }

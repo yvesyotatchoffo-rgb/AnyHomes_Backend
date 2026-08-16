@@ -2,7 +2,7 @@ const db = require("../models");
 
 const add = async (req, res) => {
   try {
-    const { label, label_en, category, order, isActive } = req.body;
+    const { label, label_en, category, icon, order, isActive } = req.body;
     if (!label) {
       return res.status(400).json({ success: false, error: { code: 400, message: "Le label est requis." } });
     }
@@ -10,6 +10,7 @@ const add = async (req, res) => {
       label,
       label_en: label_en || "",
       category: category || "",
+      icon: icon || "",
       order: order || 0,
       isActive: isActive !== false,
     });
@@ -56,7 +57,7 @@ const details = async (req, res) => {
 
 const edit = async (req, res) => {
   try {
-    const { id, label, label_en, category, order, isActive } = req.body;
+    const { id, label, label_en, category, icon, order, isActive } = req.body;
     if (!id) {
       return res.status(400).json({ success: false, error: { code: 400, message: "ID requis." } });
     }
@@ -64,6 +65,7 @@ const edit = async (req, res) => {
     if (label !== undefined) update.label = label;
     if (label_en !== undefined) update.label_en = label_en;
     if (category !== undefined) update.category = category;
+    if (icon !== undefined) update.icon = icon;
     if (order !== undefined) update.order = Number(order);
     if (isActive !== undefined) update.isActive = isActive;
 

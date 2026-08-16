@@ -36,6 +36,10 @@ module.exports = (mongoose) => {
       // Question libre posée par l'utilisateur (intent user_question)
       user_question: { type: String, default: null },
 
+      // Écran d'origine de la conversation (ex: "coach-immo" pour l'écran
+      // Alfred coach immo IA, "dashboard" pour l'écran transaction-dashboard)
+      source: { type: String, default: "dashboard" },
+
       // Versioning
       prompt_version: { type: String, default: "v1.0" },
       model_version: { type: String, default: "deepseek-v4-flash" },

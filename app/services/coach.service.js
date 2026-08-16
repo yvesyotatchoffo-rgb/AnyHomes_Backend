@@ -138,6 +138,10 @@ class CoachService {
         );
       }
 
+      // Charge les caractéristiques du bien concerné pour permettre une
+      // réponse LLM contextualisée (question libre posée par l'utilisateur)
+      const propertyContext = await this._buildPropertyContext(request.property_id);
+
       // Build prompt
       const promptData = coachPromptService.buildPrompt({
         coach_intent: request.coach_intent,
@@ -146,6 +150,7 @@ class CoachService {
           ...contextData,
           // Use question from payload only if contextData doesn't already have it (avoid overwriting with undefined)
           user_question: contextData.user_question || request.payload_json.question,
+          property_context: propertyContext || contextData.property_context || null,
         },
       });
 
@@ -174,6 +179,7 @@ class CoachService {
         context_transition_key: request.context_transition_key,
         // Sauvegarder la question utilisateur pour reconstruire la conversation dans l'historique
         user_question: contextData.user_question || null,
+        source: contextData.source || "dashboard",
         prompt_version: "v1.0",
         model_version: "deepseek-v4-flash",
         status: "generated",
@@ -397,6 +403,11 @@ class CoachService {
         query.property_id = filters.property_id;
       }
 
+      // Isoler la conversation par écran d'origine (ex: "coach-immo")
+      if (filters.source) {
+        query.source = filters.source;
+      }
+
       const months = filters.months || 12;
       const lookbackDate = new Date();
       lookbackDate.setMonth(lookbackDate.getMonth() - months);
@@ -417,6 +428,58 @@ class CoachService {
   }
 
   /**
+   * Construit un bloc texte lisible décrivant le bien concerné, pour
+   * injecter ses caractéristiques dans le prompt LLM.
+   * @param {string} propertyId - Identifiant du bien
+   * @returns {Promise<string|null>} Description du bien ou null si introuvable
+   * @private
+   */
+  async _buildPropertyContext(propertyId) {
+    if (!propertyId) return null;
+
+    try {
+      const property = await db.property.findById(propertyId).select(
+        "propertyTitle address city postalCode propertyType listingType surface rooms bedrooms price propertyMonthlyCharges"
+      );
+      if (!property) {
+        logger.warn("Property not found for coach context", { property_id: propertyId });
+        return null;
+      }
+
+      const lines = [];
+      if (property.propertyTitle) lines.push(`Titre: ${property.propertyTitle}`);
+      if (property.address) lines.push(`Adresse: ${property.address}`);
+      if (property.city) lines.push(`Ville: ${property.city}`);
+      if (property.postalCode) lines.push(`Code postal: ${property.postalCode}`);
+      const listingType =
+        property.listingType || property.propertyType || null;
+      if (listingType) {
+        const label =
+          listingType === "rent" || listingType === "rental"
+            ? "À louer"
+            : listingType === "sale"
+            ? "À vendre"
+            : listingType;
+        lines.push(`Type de transaction: ${label}`);
+      }
+      if (property.surface) lines.push(`Surface: ${property.surface} m²`);
+      if (property.rooms) lines.push(`Pièces: ${property.rooms}`);
+      if (property.bedrooms) lines.push(`Chambres: ${property.bedrooms}`);
+      if (property.price) lines.push(`Prix: ${Number(property.price).toLocaleString("fr-FR")} €`);
+      if (property.propertyMonthlyCharges)
+        lines.push(`Charges mensuelles: ${Number(property.propertyMonthlyCharges).toLocaleString("fr-FR")} €`);
+
+      return lines.length > 0 ? lines.join("\n") : null;
+    } catch (error) {
+      logger.warn("Failed to build property context", {
+        property_id: propertyId,
+        error: error.message,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Send notification email asynchronously (fire-and-forget)
    * Called for spontaneous coach messages
    * @private
@@ -426,7 +489,7 @@ class CoachService {
   async _sendNotificationEmailAsync(record, request) {
     try {
       // Fetch user data
-      const user = await db.Users.findById(record.user_id).select(
+      const user = await db.users.findById(record.user_id).select(
         "email firstName lastName"
       );
       if (!user || !user.email) {
@@ -437,7 +500,7 @@ class CoachService {
       }
 
       // Fetch property data
-      const property = await db.properties.findById(record.property_id).select(
+      const property = await db.property.findById(record.property_id).select(
         "propertyTitle surface city postalCode propertyType listingType images"
       );
       if (!property) {

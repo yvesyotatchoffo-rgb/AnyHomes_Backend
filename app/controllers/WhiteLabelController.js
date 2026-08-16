@@ -106,7 +106,7 @@ exports.dashboard = async (req, res) => {
 exports.getSettings = async (req, res) => {
   try {
     const agencyId = getAgencyId(req);
-    const user = await User.findById(agencyId).select('agencyName agencySlug agencyLogo sidebarColor buttonColor whiteLabelActive whiteLabelMaxLeads companyLogo companyName fullName');
+    const user = await User.findById(agencyId).select('agencyName agencySlug agencyLogo favicon sidebarColor buttonColor whiteLabelActive whiteLabelMaxLeads companyLogo companyName fullName');
     const thresholds = await AgencyHotLeadThreshold.findOne({ agencyId }).lean();
     return res.status(200).json({ success: true, data: { ...user.toObject(), thresholds } });
   } catch (err) {
@@ -121,11 +121,12 @@ exports.updateSettings = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Seul l\'admin peut modifier les paramètres' });
     }
 
-    const { agencyName, agencySlug, agencyLogo, sidebarColor, buttonColor, whiteLabelMaxLeads } = req.body;
+    const { agencyName, agencySlug, agencyLogo, favicon, sidebarColor, buttonColor, whiteLabelMaxLeads } = req.body;
     const updates = {};
     if (agencyName !== undefined) updates.agencyName = agencyName;
     if (agencySlug !== undefined) updates.agencySlug = agencySlug;
     if (agencyLogo !== undefined) updates.agencyLogo = agencyLogo;
+    if (favicon !== undefined) updates.favicon = favicon;
     if (sidebarColor !== undefined) updates.sidebarColor = sidebarColor;
     if (buttonColor !== undefined) updates.buttonColor = buttonColor;
     if (whiteLabelMaxLeads !== undefined) updates.whiteLabelMaxLeads = whiteLabelMaxLeads;

@@ -26,7 +26,7 @@ exports.getAgencyBySlug = async (req, res) => {
       agencySlug: slug,
       whiteLabelActive: true,
       accountType: 'pro',
-    }).select('agencyName agencySlug agencyLogo sidebarColor buttonColor about companyName fullName email mobileNo website address city coverImage companyLogo');
+    }).select('agencyName agencySlug agencyLogo favicon sidebarColor buttonColor about companyName fullName email mobileNo website address city coverImage companyLogo');
 
     if (!agency) {
       return res.status(404).json({ success: false, message: 'Agence non trouvée' });

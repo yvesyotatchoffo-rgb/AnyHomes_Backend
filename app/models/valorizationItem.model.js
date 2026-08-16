@@ -6,6 +6,7 @@ const valorizationItemSchema = new Schema(
     label: { type: String, required: true },
     label_en: { type: String, default: "" },
     category: { type: String, default: "" },
+    icon: { type: String, default: "" },
     order: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
   },

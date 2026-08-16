@@ -91,6 +91,11 @@ module.exports = (mongoose) => {
             toilets: { type: String },
             livingRoom: { type: String },
             totalFloorBuilding: { type: String },
+            office: { type: String },
+            diningRoom: { type: String },
+            attic: { type: String },
+            garage: { type: String },
+            gardenShed: { type: String },
             propertyMonthlyCharges: { type: Number },  //rent
             guaranteeDeposit: { type: Number }, //rent
             propertyInventory: { type: Number }, //rent

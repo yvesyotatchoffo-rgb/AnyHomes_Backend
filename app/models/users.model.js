@@ -127,6 +127,7 @@ module.exports = (mongoose) => {
       agencyName: { type: String },
       agencySlug: { type: String, unique: true, sparse: true },
       agencyLogo: { type: String },
+      favicon: { type: String },
       sidebarColor: { type: String, default: '#976DD0' },
       buttonColor: { type: String, default: '#976DD0' },
       whiteLabelActive: { type: Boolean, default: false },
