@@ -34,7 +34,9 @@ function buildPdfViewModel({ snapshot, destination, selectedPhotos, property, ct
         ? `${Number(property.surface).toLocaleString("fr-FR")} m²`
         : null,
       rooms: property?.rooms ? `${property.rooms} pièces` : null,
-      bedrooms: property?.bedrooms ? `${property.bedrooms} chambres` : null,
+      bedrooms: property?.bedrooms != null && Number(property.bedrooms) > 0
+        ? `${Number(property.bedrooms)} chambres`
+        : null,
       dpe: property?.energyefficient || property?.energy_efficient || null,
       descriptionHtml: compactDescriptionHtml(
         property?.content || "<p>Aucune description renseignée.</p>"

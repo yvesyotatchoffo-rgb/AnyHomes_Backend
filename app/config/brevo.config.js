@@ -68,6 +68,7 @@ async function sendEmail({
   htmlContent,
   params = {},
   templateId,
+  attachment,
   whiteLabel, // { agencyId | agency | slug } — forcer un branding white-label
 }) {
   try {
@@ -117,6 +118,7 @@ async function sendEmail({
     const payload = {
       sender,
       to: toList,
+      ...(attachment ? { attachment } : {}),
       ...(templateId
         ? { templateId, params }
         : { subject, htmlContent, ...(Object.keys(params).length && { params }) }),

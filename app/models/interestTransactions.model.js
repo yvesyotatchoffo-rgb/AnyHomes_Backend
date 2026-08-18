@@ -45,6 +45,7 @@ module.exports = (mongoose) => {
             funnelStatus: { type: String },
             documents: { type: Object, },
             applicationFile: { type: Object, },
+            visitFolder: { type: Object, },
             status: { type: String, enum: ["active", "inactive"], default: "active" },
             interestStatus: { type: String, enum: ["completed", "pending", "expired"], default: "pending" }, //this nterest status
             transferDone: { type: Boolean, default: false }, // after transfer of property/rental key becomes true

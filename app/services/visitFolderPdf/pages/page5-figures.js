@@ -13,8 +13,13 @@ function pageFigures(vm) {
 
   const tableMap = new Map((vm.sections.tables || []).map((table) => [table.key, table.rows || []]));
   const boxes = orderedTitles
-    .map(([key, title]) => figureBox(title, tableMap.get(key) || []))
-    .concat(figureBox("Notations", vm.sections.externalRatings || []))
+    .filter(([key]) => tableMap.has(key) && tableMap.get(key).length)
+    .map(([key, title]) => figureBox(title, tableMap.get(key)))
+    .concat(
+      (vm.sections.externalRatings || []).length
+        ? figureBox("Notations", vm.sections.externalRatings)
+        : []
+    )
     .join("");
 
   return renderStandardPage({
@@ -24,7 +29,7 @@ function pageFigures(vm) {
     footerLogo: vm.brand.logoDark,
     footerLogoClassName: "footer-logo--lg",
     content: `
-      <div class="figures-grid">${boxes}</div>
+      ${boxes ? `<div class="figures-grid">${boxes}</div>` : ""}
       ${docsGrid(vm.sections.selectedDocuments)}
     `,
   });

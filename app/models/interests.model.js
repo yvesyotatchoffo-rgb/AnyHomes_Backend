@@ -142,6 +142,7 @@ module.exports = (mongoose) => {
             finalHomeInventorySlot: { type: Object },
             isDeleted: { type: Boolean, default: false },
             propertyTransferRequest: { type: Boolean, default: false },
+            visitFolderSent: { type: Boolean, default: false },
         },
         { timestamps: true }
     );

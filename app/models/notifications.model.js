@@ -11,6 +11,10 @@ module.exports = (mongoose) => {
         type: Schema.Types.ObjectId,
         ref: 'properties',
       },
+      interestId: {
+        type: Schema.Types.ObjectId,
+        ref: "interests",
+      },
       type: { type: String },
       message: { type: String },
       title: { type: String },

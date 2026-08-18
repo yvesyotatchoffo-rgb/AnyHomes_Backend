@@ -2,6 +2,8 @@
 const { icon } = require("../utils/icons");
 
 function figureBox(title, rows = []) {
+  if (!rows.length) return "";
+
   return `
     <div>
       <div class="figure-title">${title}</div>

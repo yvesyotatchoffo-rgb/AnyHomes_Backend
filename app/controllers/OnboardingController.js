@@ -446,10 +446,16 @@ module.exports = {
         const userId = req.identity?.id || req.body.userId;
         const { type } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
-        if (!type || !['sidebar', 'dashboard'].includes(type)) {
-          return res.status(400).json({ success: false, message: 'type must be sidebar or dashboard' });
+        if (!type || !['sidebar', 'dashboard', 'transactionOwner', 'transactionSearcher'].includes(type)) {
+          return res.status(400).json({ success: false, message: 'type must be sidebar, dashboard, transactionOwner or transactionSearcher' });
         }
-        const field = type === 'sidebar' ? 'explainerSidebarDone' : 'explainerDashboardDone';
+        const fieldMap = {
+          sidebar: 'explainerSidebarDone',
+          dashboard: 'explainerDashboardDone',
+          transactionOwner: 'explainerTransactionOwnerDone',
+          transactionSearcher: 'explainerTransactionSearcherDone',
+        };
+        const field = fieldMap[type];
         const uid = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
         await Onboarding.findOneAndUpdate(
           { userId: uid },

@@ -2,6 +2,9 @@ const db = require("../models");
 const QRCode = require("qrcode");
 const mappingService = require("../services/visitFolderMapping.service");
 const pdfService = require("../services/visitFolderPdf");
+const pdfAssets = require("../services/visitFolderPdf/utils/assets");
+const { sendEmail } = require("../config/brevo.config");
+const constants = require("../utls/constants");
 const path = require("path");
 const fs = require("fs");
 
@@ -90,8 +93,56 @@ const _generatePdfFile = async (folderId) => {
   const ctx = await _buildBrandContext(owner, property);
   snapshot.qrDataUrl = await QRCode.toDataURL(ctx.publicUrl, { errorCorrectionLevel: "H", margin: 1, width: 360 });
 
+  // Compresser/redimensionner les images avant l'encodage base64 (photos + plans)
+  // pour réduire drastiquement la taille du PDF généré.
+  const selectedPhotoFiles = (folder.selectedPhotos || [])
+    .map((p) => p.fileName || p.file)
+    .filter(Boolean);
+  const photoFiles = selectedPhotoFiles.length
+    ? selectedPhotoFiles
+    : (property.images || []).slice(0, 10).map((img) => img.file || img.fileName).filter(Boolean);
+  const planFiles = (folder.editableContent?.plans || [])
+    .map((p) => p.fileName)
+    .filter(Boolean);
+  await pdfAssets.optimizeImagesForPdf(photoFiles, { width: 1000, quality: 72 });
+  await pdfAssets.optimizeImagesForPdf(planFiles, { width: 1000, quality: 85 });
+
   const html = pdfService.buildHtml(snapshot, folder.destination, folder.selectedPhotos, property, ctx);
   await pdfService.generatePdf(html, pdfPath);
+};
+
+// Envoie le PDF d'un dossier de visite par email (Brevo) — utilisé pour l'envoi
+// automatique au candidat lors de la confirmation de la visite (Parcours Immo Digital).
+const sendVisitFolderByEmail = async ({ folder, email, candidateName, ownerName, dashboardUrl }) => {
+  try {
+    if (!folder || !email) return false;
+    const property = await db.property.findById(folder.propertyId).select("propertyTitle").lean();
+    if (!property) return false;
+
+    await _generatePdfFile(folder._id);
+    const pdfPath = _pdfPath(folder._id);
+    if (!fs.existsSync(pdfPath)) return false;
+
+    const pdfBase64 = fs.readFileSync(pdfPath).toString("base64");
+    const pdfFilename = `dossier-visite-${(property.propertyTitle || folder._id).replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
+
+    const result = await sendEmail({
+      module: "AUTH",
+      to: email.trim(),
+      templateId: constants.BREVO.VISIT_FOLDER_SENT,
+      params: {
+        ownerName: ownerName || "L'agent",
+        candidateName: candidateName || "",
+        propertyTitle: property.propertyTitle || "",
+        dashboardUrl: dashboardUrl || "",
+      },
+      attachment: [{ content: pdfBase64, name: pdfFilename }],
+    });
+    return result?.success === true;
+  } catch (err) {
+    console.error("Error in sendVisitFolderByEmail:", err);
+    return false;
+  }
 };
 
 // Construit l'URL de la vitrine en sous-domaine pour une marque blanche.
@@ -514,8 +565,17 @@ const getPdf = async (req, res) => {
     if (!folder) {
       return res.status(404).json({ success: false, error: { code: 404, message: "Dossier non trouvé." } });
     }
-    // Seul le propriétaire du dossier (ou un admin) peut télécharger le PDF
-    if (String(folder.addedBy) !== String(userId) && userRole !== "admin") {
+    // Seul le propriétaire du dossier, l'acheteur du bien (candidat), ou un admin
+    // peut télécharger le PDF (le candidat y accède depuis l'historique de la transaction).
+    let authorized = String(folder.addedBy) === String(userId) || userRole === "admin";
+    if (!authorized) {
+      const candidateInterest = await db.interests
+        .findOne({ propertyId: folder.propertyId, buyerId: userId, isDeleted: false })
+        .select("_id")
+        .lean();
+      authorized = Boolean(candidateInterest);
+    }
+    if (!authorized) {
       return res.status(403).json({ success: false, error: { code: 403, message: "Non autorisé." } });
     }
 
@@ -633,4 +693,4 @@ const send = async (req, res) => {
   }
 };
 
-module.exports = { getProperties, generate, getById, update, getPdf, getValorizationItems, remove, send };
+module.exports = { getProperties, generate, getById, update, getPdf, getValorizationItems, remove, send, sendVisitFolderByEmail };

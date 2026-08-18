@@ -11,6 +11,8 @@ module.exports = (mongooseInstance) => {
     completionCelebrationSeen: { type: Boolean, default: false },
     explainerSidebarDone: { type: Boolean, default: false },
     explainerDashboardDone: { type: Boolean, default: false },
+    explainerTransactionOwnerDone: { type: Boolean, default: false },
+    explainerTransactionSearcherDone: { type: Boolean, default: false },
   }, { timestamps: true });
 
   schema.method('toJSON', function() {

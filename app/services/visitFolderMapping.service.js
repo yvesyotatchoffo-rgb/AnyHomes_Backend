@@ -256,12 +256,32 @@ const buildMeasuredSpaces = (spaces) => {
 };
 
 // ─── Prestations du bien (Page 2 - bloc 3) ───
+const PROPERTY_TYPE_TRANSLATIONS = {
+  apartment: "Appartement",
+  house: "Maison",
+  castle: "Château",
+  building: "Immeuble",
+  farm: "Ferme",
+  studio: "Studio",
+  villa: "Villa",
+  loft: "Loft",
+  penthouse: "Penthouse",
+  duplex: "Duplex",
+  chalet: "Chalet",
+  land: "Terrain",
+};
+
+const translatePropertyType = (value) => {
+  const key = String(value || "").trim().toLowerCase();
+  return PROPERTY_TYPE_TRANSLATIONS[key] || String(value || "");
+};
+
 const buildPrestationsSection = (property) => {
   const items = [];
 
-  if (isFilled(property?.type)) items.push({ icon: "Building2", label: "Type", value: property.type });
+  if (isFilled(property?.type)) items.push({ icon: "Building2", label: "Type", value: translatePropertyType(property.type) });
   if (isFilled(property?.propertyFloor)) items.push({ icon: "Layers", label: "Étage", value: property.propertyFloor });
-  if (isFilled(property?.totalFloorBuilding)) items.push({ icon: "Building", label: "Étages de l'immeuble", value: property.totalFloorBuilding });
+  if (isFilled(property?.totalFloorBuilding) && Number(property.totalFloorBuilding) > 0) items.push({ icon: "Building", label: "Étages de l'immeuble", value: property.totalFloorBuilding });
   if (isFilled(property?.building)) items.push({ icon: "CalendarClock", label: "Année de construction", value: property.building });
   if (isFilled(property?.situation)) items.push({ icon: "MapPin", label: "Situation", value: Array.isArray(property.situation) ? property.situation.join(", ") : property.situation });
   if (isFilled(property?.usedAs)) items.push({ icon: "Tag", label: "Usage", value: property.usedAs });
@@ -445,6 +465,7 @@ module.exports = {
   buildAvailableSpaces,
   buildMeasuredSpaces,
   buildPrestationsSection,
+  translatePropertyType,
   buildExternalRatings,
   buildTablesSection,
 };

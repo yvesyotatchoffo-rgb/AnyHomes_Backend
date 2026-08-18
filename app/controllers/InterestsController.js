@@ -8,6 +8,7 @@ const constants = require("../utls/constants");
 const { sendEmail } = require("../config/brevo.config");
 const fcm_service = require("../services/FcmServices");
 const { formatDisplayName } = require('../utls/formatDisplayName');
+const visitFolderCtrl = require("./VisitFolderController");
 
 const buildGuestProspectImage = (req, filename) => {
   const origin = process.env.BACK_WEB_URL || "http://localhost:6089";
@@ -2009,6 +2010,57 @@ module.exports = {
                 await notifyUser(interest.buyerId._id, "How was your visit?", `Leave a review, request documents, make an offer, or let the owner know your decision.`);
                 const visitHostedPath = `${process.env.FRONT_WEB_URL}/real-estate-transaction-searcher?user_id=${interest.buyerId._id}`;
                 await Emails.interestUpdateEmail({ buyerName, ownerName, propertyTitle: findProperty.propertyTitle, email: buyerEmail, propertyLink: visitHostedPath, type: "visitHosted" });
+
+                // ── Dossier de visite : envoi automatique au candidat (une seule fois,
+                // que ce soit le propriétaire ou le candidat qui confirme la visite) ──
+                if (!interest.visitFolderSent) {
+                    try {
+                        const latestFolder = await db.visitFolder
+                            .findOne({ propertyId, status: { $in: ["generated", "modified", "ready"] } })
+                            .sort({ createdAt: -1 })
+                            .lean();
+                        if (latestFolder) {
+                            const candidatePath = `${process.env.FRONT_WEB_URL || "http://localhost:8089"}/real-estate-transaction-searcher?interestId=${interestId}&openHistory=1`;
+                            await visitFolderCtrl.sendVisitFolderByEmail({
+                                folder: latestFolder,
+                                email: buyerEmail,
+                                candidateName: buyerName,
+                                ownerName,
+                                dashboardUrl: candidatePath,
+                            });
+
+                            await db.interestTransactions.findOneAndUpdate(
+                                { interestId, funnelStatus: "visit hosted", isDeleted: false },
+                                {
+                                    $set: {
+                                        visitFolder: {
+                                            folderId: latestFolder._id,
+                                            propertyId,
+                                            destination: latestFolder.destination,
+                                            generatedAt: latestFolder.generatedAt,
+                                        },
+                                    },
+                                },
+                                { sort: { createdAt: -1 } }
+                            );
+
+                            await db.notifications.create({
+                                sendTo: interest.buyerId._id,
+                                sendBy: findProperty.addedBy._id,
+                                property_id: propertyId,
+                                interestId,
+                                status: "unread",
+                                type: "visitFolder",
+                                title: "Dossier de visite",
+                                message: `Le dossier de visite de ${findProperty.propertyTitle} est disponible.`
+                            });
+
+                            await db.interests.updateOne({ _id: interestId }, { visitFolderSent: true });
+                        }
+                    } catch (err) {
+                        console.error("Error auto-sending visit folder:", err);
+                    }
+                }
             }
 
             if (funnelStatus === "document send by owner") {

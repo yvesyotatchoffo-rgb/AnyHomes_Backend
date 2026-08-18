@@ -102,6 +102,7 @@ module.exports = {
             type: "$type",
             message: "$message",
             title: "$title",
+            interestId: "$interestId",
             createdAt: "$createdAt",
             updatedAt: "$updatedAt",
             isDeleted: "$isDeleted",

@@ -12,6 +12,9 @@ function pageFeatures(vm) {
       <div class="section-title">Description du bien</div>
       ${renderPanel(vm.listing.descriptionHtml)}
 
+      ${
+        vm.sections.spaces.length
+          ? `
       <div class="section-title">Superficie des principaux espaces du bien</div>
       <div class="grid-3">
         ${iconRows(
@@ -22,6 +25,9 @@ function pageFeatures(vm) {
           }))
         )}
       </div>
+      `
+          : ""
+      }
 
       <div class="section-title">Les différentes prestations du bien</div>
       <div class="grid-3">

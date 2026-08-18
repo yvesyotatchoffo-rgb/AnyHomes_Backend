@@ -88,6 +88,15 @@ function renderFooterLogo(vm) {
 }
 
 function renderFixedCover(vm) {
+  const valorizationItems = renderValorizationItems(vm);
+  const valorizationBlock = valorizationItems
+    ? `
+          <div class="cover-fixed-valorization-title">Éléments de valorisation du bien</div>
+          <div class="cover-fixed-valorization-list">
+            ${valorizationItems}
+          </div>`
+    : "";
+
   return `
     <section class="cover-fixed">
       <div class="cover-fixed-top">
@@ -104,10 +113,7 @@ function renderFixedCover(vm) {
             ${vm.listing.ownerPhone ? ` · ${escapeHtml(vm.listing.ownerPhone)}` : ""}
           </div>
 
-          <div class="cover-fixed-valorization-title">Éléments de valorisation du bien</div>
-          <div class="cover-fixed-valorization-list">
-            ${renderValorizationItems(vm)}
-          </div>
+          ${valorizationBlock}
         </div>
 
         <div class="cover-fixed-divider"></div>
