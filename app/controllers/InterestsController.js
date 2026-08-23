@@ -1,4 +1,5 @@
 const db = require("../models");
+const mongoose = require("mongoose");
 const Emails = require("../Emails/onBoarding");
 const visitInvite = require("../Emails/visitInvite");
 const scoreService = require("../services/financialScore.service");
@@ -2987,6 +2988,17 @@ module.exports = {
                 return res.status(400).json({
                     success: false,
                     message: "interestId is required."
+                });
+            }
+
+            // Les IDs démo/guest ne sont pas des ObjectId valides → retourner
+            // une liste vide plutôt qu'une erreur 500 (évite le déluge d'erreurs
+            // sur les écrans de démo transaction-dashboard).
+            if (!mongoose.Types.ObjectId.isValid(interestId)) {
+                return res.status(200).json({
+                    success: true,
+                    data: [],
+                    pagination: { total: 0 }
                 });
             }
 
