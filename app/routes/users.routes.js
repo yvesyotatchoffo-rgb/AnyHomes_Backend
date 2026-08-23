@@ -321,5 +321,10 @@ router.delete("/delete-by-credentials", user.deleteUserByEmailPassword);
 
 // Admin Company detail (profil complet d'un pro/eventOrganizer)
 router.get("/admin/company-detail/:id", adminCompany.companyAdminDetail);
+router.put("/admin/company-detail/:id/commission", adminCompany.updateUserCommission);
+router.put("/admin/company-detail/:id/learning-center", adminCompany.updateUserLearningCenter);
+router.put("/admin/company-detail/:id/marketplace", adminCompany.updateUserMarketplace);
+router.get("/admin/company-detail/:id/white-label-overview", adminCompany.whiteLabelOverview);
+router.put("/admin/company-detail/:id/white-label-commission", adminCompany.updateUserWhiteLabelCommission);
 
 module.exports = router;

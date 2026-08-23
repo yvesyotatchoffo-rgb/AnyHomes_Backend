@@ -146,7 +146,7 @@ module.exports = {
 
   getAllFunnelUrlById: async (req, res) => {
     try {
-      const { search = '', page = 1, count = 10, loggedInUser, status, funnelStatus, type, topic } = req.query;
+      const { search = '', page = 1, count = 10, loggedInUser, status, funnelStatus, type, topic, public: isPublicView } = req.query;
 
       let loggedInUserId = null;
       // Only create ObjectId if loggedInUser is a valid 24-character hex string
@@ -167,6 +167,12 @@ module.exports = {
         ...(funnelStatus && { funnelStatus }),
         ...(topic && { topic }),
       };
+
+      // Vue publique (learning center utilisateurs) : ne montrer que les contenus actifs,
+      // hors contenus en attente/rejetés ou désactivés.
+      if (isPublicView === 'true' || isPublicView === true) {
+        matchStage.status = 'active';
+      }
 
       // Handle type parameter - can be a comma-separated string or single value
       if (type) {

@@ -19,7 +19,9 @@ module.exports = (mongoose) => {
       type: { type: String },
       viewCount: { type: Number, },
       viewersId: [{ type: Schema.Types.ObjectId, ref: "users" }],
-      status: { type: String, enum: ["active", "inactive"], default: "active" },
+      shareCount: { type: Number, default: 0 },
+      isProContent: { type: Boolean, default: false },
+      status: { type: String, enum: ["active", "inactive", "pending", "rejected"], default: "active" },
     },
     { timestamps: true }
   );

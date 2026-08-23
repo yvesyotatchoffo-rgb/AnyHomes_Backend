@@ -96,6 +96,10 @@ module.exports = (mongoose) => {
       // White-label (marque blanche)
       whiteLabelEnabled: { type: Boolean, default: false },
       whiteLabelMaxLeads: { type: Number, default: 50 },
+      // Learning Center — publication de contenu par les pros
+      learningCenterEnabled: { type: Boolean, default: false },
+      // Marketplace — accès à la marketplace de services par les pros
+      marketplaceEnabled: { type: Boolean, default: false },
     },
     { timestamps: true }
   );

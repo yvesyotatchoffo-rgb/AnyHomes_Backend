@@ -66,6 +66,9 @@ module.exports = (mongoose) => {
       // Stripe Connect — marketplace de services
       stripeConnectAccountId: { type: String, default: null },
       stripeConnectActive: { type: Boolean, default: false },
+      // Commission AnyHomes sur le HT (%) — taux personnalisé pour ce user pro
+      // (null = on utilise le taux global des paramètres marketplace)
+      marketplaceCommissionPercentHT: { type: Number, default: null },
       property: String,
       propertyFor: String,
       isDeleted: { type: Boolean, default: false },
@@ -132,6 +135,15 @@ module.exports = (mongoose) => {
       buttonColor: { type: String, default: '#976DD0' },
       whiteLabelActive: { type: Boolean, default: false },
       whiteLabelMaxLeads: { type: Number, default: 50 },
+      whiteLabelActivatedAt: { type: Date, default: null },
+      // Nombre de visites de la homepage marketing de la marque blanche
+      whiteLabelViews: { type: Number, default: 0 },
+      // Learning Center — accès à la publication de contenu pour les pros
+      learningCenterEnabled: { type: Boolean, default: false },
+      // Marketplace — accès à la marketplace de services (surcharge manuelle)
+      marketplaceEnabled: { type: Boolean, default: false },
+      // Commission AnyHomes marque blanche (HT %) — surcharge par user agence
+      marketplaceWhiteLabelCommissionPercentHT: { type: Number, default: null },
       // Pour les leads inscrits via une agence
       whiteLabelAgencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'users', default: null },
       whiteLabelInvitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'users', default: null },

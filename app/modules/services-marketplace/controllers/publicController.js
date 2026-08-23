@@ -571,7 +571,47 @@ exports.createOrder = async (req, res) => {
     const settings = await getMarketplaceSettingsDoc();
     const totalPriceTTC = isFreeService ? 0 : service.priceTTC * quantity;
     const vatPercent = settings.vatPercent ?? 20;
-    const commissionPercentHT = settings.commissionPercent ?? 25;
+    const globalCommissionPercentHT = settings.commissionPercent ?? 25;
+    const globalWhiteLabelCommissionPercentHT = settings.whiteLabelCommissionPercent ?? 10;
+
+    // Taux de commission AnyHomes :
+    //  - Marque blanche (pro agence white-label ou rattaché à une agence) → taux marque blanche
+    //    (surcharge de l'agence si définie, sinon global marque blanche 10%).
+    //  - Sinon → taux personnalisé du pro si défini, sinon global.
+    let proCommissionPercentHT = null;
+    let proWhiteLabelRate = null;
+    let isWhiteLabelPro = false;
+    try {
+      if (service.pro && service.pro._id) {
+        const proUser = await db.users
+          .findById(service.pro._id)
+          .select("marketplaceCommissionPercentHT marketplaceWhiteLabelCommissionPercentHT whiteLabelActive whiteLabelAgencyId _id")
+          .lean();
+        if (proUser) {
+          isWhiteLabelPro = proUser.whiteLabelActive === true || Boolean(proUser.whiteLabelAgencyId);
+          if (proUser.whiteLabelActive === true && proUser.marketplaceWhiteLabelCommissionPercentHT != null) {
+            proWhiteLabelRate = Number(proUser.marketplaceWhiteLabelCommissionPercentHT);
+          } else if (proUser.whiteLabelAgencyId) {
+            const agency = await db.users
+              .findById(proUser.whiteLabelAgencyId)
+              .select("marketplaceWhiteLabelCommissionPercentHT whiteLabelActive _id")
+              .lean();
+            if (agency && agency.marketplaceWhiteLabelCommissionPercentHT != null) {
+              proWhiteLabelRate = Number(agency.marketplaceWhiteLabelCommissionPercentHT);
+            }
+          }
+          if (!isWhiteLabelPro && proUser.marketplaceCommissionPercentHT != null) {
+            proCommissionPercentHT = Number(proUser.marketplaceCommissionPercentHT);
+          }
+        }
+      }
+    } catch (e) {
+      // en cas d'erreur, on garde le taux global
+    }
+    const commissionPercentHT = isWhiteLabelPro
+      ? (proWhiteLabelRate != null ? proWhiteLabelRate : globalWhiteLabelCommissionPercentHT)
+      : (proCommissionPercentHT != null ? proCommissionPercentHT : globalCommissionPercentHT);
+
     const totalPriceHT = Math.round((totalPriceTTC / (1 + vatPercent / 100)) * 100) / 100;
     const vatAmount = Math.round((totalPriceTTC - totalPriceHT) * 100) / 100;
     const commissionHT = Math.round((totalPriceHT * commissionPercentHT) / 100 * 100) / 100;

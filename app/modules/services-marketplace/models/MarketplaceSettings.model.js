@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const MarketplaceSettingsSchema = new mongoose.Schema({
   commissionPercent: { type: Number, default: 25 }, // 25% HT
+  whiteLabelCommissionPercent: { type: Number, default: 10 }, // 10% HT — marque blanche
   vatPercent: { type: Number, default: 20 },
   minPayoutDelayDays: { type: Number, default: 3 },
   maxServicesPerPro: { type: Number, default: 10 },

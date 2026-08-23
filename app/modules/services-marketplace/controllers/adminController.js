@@ -40,12 +40,16 @@ async function getMarketplaceSettingsDoc() {
 function settingsResponse(settings) {
   const vatPercent = settings.vatPercent ?? 20;
   const commissionPercentHT = settings.commissionPercent ?? 25;
+  const whiteLabelCommissionPercentHT = settings.whiteLabelCommissionPercent ?? 10;
   const commissionPercentTTC = Math.round(commissionPercentHT * (1 + vatPercent / 100) * 100) / 100;
+  const whiteLabelCommissionPercentTTC = Math.round(whiteLabelCommissionPercentHT * (1 + vatPercent / 100) * 100) / 100;
   return {
     payoutDelayDays: settings.minPayoutDelayDays ?? 3,
     vatPercent,
     commissionPercentHT,
     commissionPercentTTC,
+    whiteLabelCommissionPercentHT,
+    whiteLabelCommissionPercentTTC,
     maxServicesPerPro: settings.maxServicesPerPro ?? 10,
     paymentInfo: settings.paymentInfo ?? '',
     autoValidateServices: settings.autoValidateServices ?? false,
@@ -63,7 +67,7 @@ exports.getMarketplaceSettings = async (req, res) => {
 
 exports.updateMarketplaceSettings = async (req, res) => {
   try {
-    const { payoutDelayDays, vatPercent, commissionPercentHT, commissionPercentTTC, maxServicesPerPro, paymentInfo } = req.body;
+    const { payoutDelayDays, vatPercent, commissionPercentHT, commissionPercentTTC, whiteLabelCommissionPercentHT, whiteLabelCommissionPercentTTC, maxServicesPerPro, paymentInfo } = req.body;
     const settings = await getMarketplaceSettingsDoc();
 
     if (payoutDelayDays !== undefined) {
@@ -90,6 +94,20 @@ exports.updateMarketplaceSettings = async (req, res) => {
       const vat = vatPercent !== undefined ? Number(vatPercent) : settings.vatPercent;
       const computedHT = Math.round((parsed / (1 + vat / 100)) * 100) / 100;
       settings.commissionPercent = computedHT;
+    }
+
+    if (whiteLabelCommissionPercentHT !== undefined) {
+      const parsed = Number(whiteLabelCommissionPercentHT);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return res.status(400).json({ success: false, message: 'Commission marque blanche HT invalide' });
+      settings.whiteLabelCommissionPercent = parsed;
+    }
+
+    if (whiteLabelCommissionPercentTTC !== undefined) {
+      const parsed = Number(whiteLabelCommissionPercentTTC);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) return res.status(400).json({ success: false, message: 'Commission marque blanche TTC invalide' });
+      const vat = vatPercent !== undefined ? Number(vatPercent) : settings.vatPercent;
+      const computedHT = Math.round((parsed / (1 + vat / 100)) * 100) / 100;
+      settings.whiteLabelCommissionPercent = computedHT;
     }
 
     if (maxServicesPerPro !== undefined) {

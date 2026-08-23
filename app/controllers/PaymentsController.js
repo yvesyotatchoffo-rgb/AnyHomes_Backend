@@ -2,6 +2,7 @@ const db = require("../models");
 var mongoose = require("mongoose");
 const stripe = require("stripe")(process.env.STRIPE_KEY);
 const agenda = require("../config/agenda.config");
+const ReferralService = require("../services/referral.service");
 
 module.exports = {
   payWithCard: async (req, res) => {
@@ -499,6 +500,25 @@ module.exports = {
               "Subscription created after initial payment:",
               subscription.id,
             );
+
+            // Programme de parrainage : commission pro_subscription
+            try {
+              const payer = await db.users.findById(userId).select("_id accountType").lean();
+              if (payer) {
+                const amountReceived = Number(intent.amount_received) || 0;
+                const amountHtCents = Math.round((amountReceived / 1.2) * 100);
+                await ReferralService.createCommissionForPayment({
+                  userId: String(payer._id),
+                  amountHtCents,
+                  paymentId: intent.id,
+                  subscriptionId: createSubscription._id,
+                  invoiceId: invoice.id || null,
+                  revenueType: "pro_subscription",
+                });
+              }
+            } catch (referralErr) {
+              console.error("[Referral] commission subscription error:", referralErr.message);
+            }
             return;
           }
           if (

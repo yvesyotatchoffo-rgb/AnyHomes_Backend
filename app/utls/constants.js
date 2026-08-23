@@ -359,6 +359,14 @@ module.exports = {
     VISIT_FOLDER_SENT: 175,
     BUYER_INVITATION: 134,
     WHITE_LABEL_INVITATION: 135,
+    // Programme de parrainage (commissions, filleuls, versements)
+    REFERRAL_NEW_COMMISSION: 176,
+    REFERRAL_COMMISSION_APPROVED: 177,
+    REFERRAL_PAYOUT_SENT: 178,
+    REFERRAL_NEW_GODSON: 179,
+    // Learning Center accessible aux pros (validation/refus de contenu)
+    LEARNING_CONTENT_VALIDATED: 180,
+    LEARNING_CONTENT_REJECTED: 181,
   },
   // Templates white-label (site vitrine des agences).
   // Chaque template est préfixé [White-Label] dans Brevo (créés par

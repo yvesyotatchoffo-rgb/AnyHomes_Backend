@@ -105,6 +105,7 @@ const { resetDailyMessageLimit } = require("./app/cron/message.cron");
 const { checkAndSendSubscriptionReminders } = require("./app/cron/subscription.cron");
 const { monthlyCampaignLimit } = require("./app/cron/campaign.cron.js");
 const { startWeeklyDigestCron } = require("./app/cron/weeklyDigest.cron");
+require("./app/cron/referral.cron");
 
 // require('./app/routes/users.routes')(app);
 // require('./app/routes/upload.routes')(app);

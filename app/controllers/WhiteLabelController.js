@@ -370,11 +370,17 @@ exports.adminToggle = async (req, res) => {
     const { userId, active } = req.body;
     if (!userId) return res.status(400).json({ success: false, message: 'userId requis' });
 
-    const user = await User.findByIdAndUpdate(
+    const existing = await User.findById(userId).select("whiteLabelActivatedAt whiteLabelActive").lean();
+const activating = active === true || active === 'true';
+const set = {
+  whiteLabelActive: activating,
+  ...(activating && existing && !existing.whiteLabelActivatedAt ? { whiteLabelActivatedAt: new Date() } : {}),
+};
+const user = await User.findByIdAndUpdate(
       userId,
-      { whiteLabelActive: active === true || active === 'true' },
+      set,
       { new: true }
-    ).select('_id whiteLabelActive agencyName fullName');
+    ).select('_id whiteLabelActive whiteLabelActivatedAt agencyName fullName');
 
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable' });
 

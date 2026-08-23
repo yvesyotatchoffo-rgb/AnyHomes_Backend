@@ -37,3 +37,19 @@ exports.getAgencyBySlug = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+/**
+ * POST /api/public/agency/:slug/view
+ * Incrémente le compteur de visites de la homepage marketing de la marque blanche.
+ */
+exports.incrementView = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const agency = await User.findOne({ agencySlug: slug, whiteLabelActive: true });
+    if (!agency) return res.status(404).json({ success: false, message: 'Agence non trouvée' });
+    await User.updateOne({ _id: agency._id }, { $inc: { whiteLabelViews: 1 } });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};

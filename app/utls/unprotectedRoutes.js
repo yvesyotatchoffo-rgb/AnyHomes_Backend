@@ -102,7 +102,9 @@ module.exports = {
     "/school-types/seed",
     "/schools/list",
     // Public — vitrine agence
-    "/api/public/agency"
+    "/api/public/agency",
+    // Programme de parrainage — infos publiques d'un code (page d'inscription)
+    "/api/referral-program/code/info",
   ],
 };
 

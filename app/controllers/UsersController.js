@@ -401,6 +401,25 @@ module.exports = {
           userData.id = userData._id;
           userData.folderCount = folderCount;
           userData.totalpropertiesInFolder = totalpropertiesInFolder;
+
+          // Flags effectifs d'accès (Learning Center / Marketplace) : surcharge user OU plan
+          let planFlags = { learningCenterEnabled: false, marketplaceEnabled: false };
+          try {
+            if (user.planId && mongoose.isValidObjectId(String(user.planId))) {
+              const planDoc = await db.plans.findById(user.planId).select("learningCenterEnabled marketplaceEnabled").lean();
+              if (planDoc) {
+                planFlags.learningCenterEnabled = planDoc.learningCenterEnabled === true;
+                planFlags.marketplaceEnabled = planDoc.marketplaceEnabled === true;
+              }
+            } else if (user.planId && typeof user.planId === "object" && user.planId.learningCenterEnabled != null) {
+              planFlags.learningCenterEnabled = user.planId.learningCenterEnabled === true;
+              planFlags.marketplaceEnabled = user.planId.marketplaceEnabled === true;
+            }
+          } catch (e) {
+            // ignore
+          }
+          userData.learningCenterEnabled = user.learningCenterEnabled === true || planFlags.learningCenterEnabled;
+          userData.marketplaceEnabled = user.marketplaceEnabled === true || planFlags.marketplaceEnabled;
           if (data.deviceId) {
             let findDevice = await Devices.findOne({ deviceId: data.deviceId });
             if (findDevice) {
@@ -1694,9 +1713,14 @@ module.exports = {
       }
 
       query.isDeleted = false;
-      query.role = "user";
+      // Par défaut on liste les comptes utilisateurs. Pour éviter d'exclure les
+      // agences marque blanche (role "agent"/"agency"), on n'impose "user" que
+      // lorsqu'aucun autre filtre de rôle marque blanche n'est actif.
       if (role) {
         query.role = role;
+      } else if (!(whiteLabelActive === "true" || whiteLabelActive === true ||
+                 whiteLabel === "true" || whiteLabel === true || whiteLabelAgencyId)) {
+        query.role = "user";
       }
       if (status) {
         query.status = status;
@@ -1790,6 +1814,73 @@ module.exports = {
       }
 
       const result = await Users.aggregate([...pipeline]);
+
+      // Agrége les compteurs "marque blanche" (leads, biens, transactions) pour chaque
+      // agence listée, quand on est en contexte marque blanche.
+      const isWlListing =
+        whiteLabelActive === "true" || whiteLabelActive === true ||
+        whiteLabel === "true" || whiteLabel === true ||
+        whiteLabelAgencyId;
+      if (isWlListing) {
+        const agencyIds = result.map((r) => r._id).filter((x) => x);
+        if (agencyIds.length > 0) {
+          const oidAgencyIds = agencyIds.map((id) => new mongoose.Types.ObjectId(String(id)));
+          const [leadsByAgency, propsByAgency, txByAgency] = await Promise.all([
+            Users.aggregate([
+              { $match: { whiteLabelAgencyId: { $in: oidAgencyIds }, isDeleted: false } },
+              { $group: { _id: "$whiteLabelAgencyId", count: { $sum: 1 } } },
+            ]),
+            db.property.aggregate([
+              {
+                $lookup: { from: "users", localField: "addedBy", foreignField: "_id", as: "ownerInfo" },
+              },
+              { $unwind: { path: "$ownerInfo", preserveNullAndEmptyArrays: true } },
+              {
+                $match: { isDeleted: false, "ownerInfo.whiteLabelAgencyId": { $in: oidAgencyIds } },
+              },
+              { $group: { _id: "$ownerInfo.whiteLabelAgencyId", count: { $sum: 1 } } },
+            ]),
+            db.interests.aggregate([
+              {
+                $lookup: { from: "properties", localField: "propertyId", foreignField: "_id", as: "propInfo" },
+              },
+              { $unwind: { path: "$propInfo", preserveNullAndEmptyArrays: true } },
+              {
+                $lookup: { from: "users", localField: "propInfo.addedBy", foreignField: "_id", as: "propOwnerInfo" },
+              },
+              { $unwind: { path: "$propOwnerInfo", preserveNullAndEmptyArrays: true } },
+              {
+                $match: {
+                  isDeleted: false,
+                  "propOwnerInfo.whiteLabelAgencyId": { $in: oidAgencyIds },
+                  $or: [
+                    { interestStatus: "completed" },
+                    { contractSigned: true },
+                    { funnelStatus: { $in: ["completed", "confirmation by user", "owner accept the application"] } },
+                  ],
+                },
+              },
+              { $group: { _id: "$propOwnerInfo.whiteLabelAgencyId", count: { $sum: 1 } } },
+            ]),
+          ]);
+          const leadsMap = Object.fromEntries(leadsByAgency.map((x) => [String(x._id), x.count]));
+          const propsMap = Object.fromEntries(propsByAgency.map((x) => [String(x._id), x.count]));
+          const txMap = Object.fromEntries(txByAgency.map((x) => [String(x._id), x.count]));
+          result.forEach((r) => {
+            r.leadsCount = leadsMap[String(r._id)] || 0;
+            r.propertiesCount = propsMap[String(r._id)] || 0;
+            r.transactionsCount = txMap[String(r._id)] || 0;
+            r._count = { properties: r.propertiesCount };
+          });
+        } else {
+          result.forEach((r) => {
+            r.leadsCount = 0;
+            r.propertiesCount = 0;
+            r.transactionsCount = 0;
+            r._count = { properties: 0 };
+          });
+        }
+      }
 
       return res.status(200).json({
         success: true,
@@ -3713,12 +3804,12 @@ module.exports = {
         );
       }
 
-      const result = await Users.aggregate([...pipeline]);
+const result = await Users.aggregate([...pipeline]);
 
       return res.status(200).json({
         success: true,
         data: result,
-        total: total.length,
+        total: total,
       });
     } catch (err) {
       return res.status(500).json({
@@ -3811,6 +3902,22 @@ module.exports = {
           ip: req.ip || null,
           userAgent: req.headers["user-agent"] || null,
         }, inviteToken).catch(() => {}); // non-blocking
+
+        // Programme de parrainage — attribution natif AnyHomes (hors marque blanche)
+        try {
+          if (!createdUser.whiteLabelAgencyId) {
+            const ReferralService = require("../services/referral.service");
+            const userType = createdUser.accountType === "pro" ? "pro" : "particulier";
+            ReferralService.attachReferralOnSignup(
+              createdUser._id,
+              refCode,
+              userType,
+              "url"
+            ).catch(() => {});
+          }
+        } catch (refProgErr) {
+          console.error("[ReferralProgram] attachOnSignup error:", refProgErr);
+        }
       }
 
       let setting_payload = {

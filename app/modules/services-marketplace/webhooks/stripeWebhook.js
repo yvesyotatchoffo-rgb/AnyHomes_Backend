@@ -13,6 +13,7 @@ const db = require('../../../models');
 const { sendEmail } = require('../../../config/brevo.config');
 const constants = require('../../../utls/constants');
 const { formatDisplayName } = require('../../../utls/formatDisplayName');
+const ReferralService = require('../../../services/referral.service');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,30 @@ module.exports = async (req, res) => {
           if (!order.payoutReleasedAt) order.payoutReleasedAt = new Date();
           await order.save();
           console.log(`[StripeWebhook] Commande ${order._id} → payoutStatus = released`);
+
+          // Programme de parrainage : commission sur services marketplace encaissés
+          try {
+            const buyerUser = await db.users.findById(order.buyer).select('_id accountType').lean();
+            if (buyerUser) {
+              const revenueType = buyerUser.accountType === 'pro' ? 'pro_service' : 'particulier_service';
+              const amountHt = Number(order.totalPriceHT) > 0
+                ? order.totalPriceHT
+                : Number(order.totalPriceTTC) > 0
+                  ? Number(order.totalPriceTTC) / 1.2
+                  : 0;
+              if (amountHt > 0) {
+                await ReferralService.createCommissionForPayment({
+                  userId: String(buyerUser._id),
+                  amountHtCents: Math.round(amountHt * 100),
+                  paymentId: pi.id,
+                  orderId: order._id,
+                  revenueType,
+                });
+              }
+            }
+          } catch (referralErr) {
+            console.error('[Referral] commission marketplace error:', referralErr.message);
+          }
         }
         break;
       }
@@ -117,6 +142,12 @@ module.exports = async (req, res) => {
             if (!order.refundedAt) order.refundedAt = new Date();
             await order.save();
             console.log(`[StripeWebhook] Commande ${order._id} → refunded`);
+          }
+          // Programme de parrainage : annule les commissions liées au paiement
+          try {
+            await ReferralService.cancelCommissionsForPayment(pi, 'Remboursement');
+          } catch (referralErr) {
+            console.error('[Referral] cancel commission error:', referralErr.message);
           }
         }
         break;
