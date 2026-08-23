@@ -16,4 +16,7 @@ router.delete('/collaborators/:id', wl.deleteCollaborator);
 router.put('/collaborators/permissions', wl.updateCollaboratorPermissions);
 router.put('/admin-toggle', wl.adminToggle);
 
+// MarketPlace dédiée (marque blanche) : services à la carte + ventes de l'agence
+router.get('/marketplace/sold-services', wl.agencyMarketplaceSoldServices);
+
 module.exports = router;

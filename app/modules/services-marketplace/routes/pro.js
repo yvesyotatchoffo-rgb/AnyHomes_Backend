@@ -30,6 +30,9 @@ router.post('/orders/:id/cancellation/accept', ctrl.acceptCancellationRequest);
 router.post('/orders/:id/cancellation/reject', ctrl.rejectCancellationRequest);
 router.post('/orders/:id/litigation', ctrl.openLitigation);
 
+// Versements (payouts versés au pro)
+router.get('/payouts', ctrl.listProPayouts);
+
 // Avis
 router.get('/reviews', validatePagination, ctrl.listProReviews);
 

@@ -251,6 +251,7 @@ module.exports = (mongoose) => {
       freeTrialStatus: { type: String, enum: ["done", "pending"], default: "pending" },   //if trial used then done else pending
       trialUserForPlan: { type: Schema.Types.ObjectId, ref: "plans" },   // what plan user used for trial
       trialPlanDate: Date,
+      trialExpiryDate: Date,   // fin de la période d'essai (déduite de trialPeriod du plan)
       directoryMessageUsage: { type: Number, default: 0 }, //message used per day for directory
       totalOwnerMessages: { type: Number, default: 0 },    // message used per day to normal users
       buyerfileIdenityVerification: { type: Boolean, default: false },

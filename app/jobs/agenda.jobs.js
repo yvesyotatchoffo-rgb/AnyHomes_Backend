@@ -20,7 +20,8 @@ module.exports = (agenda, db) => {
             planId: findFreePlan._id,
             planType: findFreePlan.planType,
             planDuration: null,
-            freeTrialStatus: "done"
+            freeTrialStatus: "done",
+            trialExpiryDate: null
           }
         }
       );
@@ -32,7 +33,8 @@ module.exports = (agenda, db) => {
             planId: null,
             planType: null,
             planDuration: null,
-            freeTrialStatus: "done"
+            freeTrialStatus: "done",
+            trialExpiryDate: null
           }
         }
       );

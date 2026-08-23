@@ -3320,7 +3320,33 @@ module.exports = {
 
         data.password = await helper.generatePassword();
 
-        const createdUser = await Users.create(data);
+const createdUser = await Users.create(data);
+
+      // Attribution par défaut : un compte pro créé sans plan reçoit « Découverte Pro »
+      if (createdUser.accountType === "pro" && !createdUser.planId) {
+        let discoveryPlan = await db.plans
+          .findById("6a8b48adffba4537aa97d926")
+          .lean();
+        if (!discoveryPlan) {
+          discoveryPlan = await db.plans
+            .findOne({
+              name: "découverte pro",
+              isDeleted: false,
+              status: "active",
+            })
+            .lean();
+        }
+        if (discoveryPlan) {
+          createdUser.planId = discoveryPlan._id;
+          createdUser.planType = discoveryPlan.planType || "free";
+          createdUser.planDuration = null;
+          try {
+            await createdUser.save();
+          } catch (saveErr) {
+            console.error("Error assigning default pro plan:", saveErr);
+          }
+        }
+      }
 
         const token = jwt.sign(
           {

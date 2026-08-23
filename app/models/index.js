@@ -9,6 +9,7 @@ db.url = dbConfig.url;
 
 db.users = require("./users.model.js")(mongoose);
 db.plans = require("./plans.model.js")(mongoose);
+db.billingSetting = require("./billingSetting.model.js")(mongoose);
 db.categories = require("./categories.model.js")(mongoose);
 db.categoryType = require("./categoryType.model.js")(mongoose);
 db.amenities = require("./amenities.model.js")(mongoose);

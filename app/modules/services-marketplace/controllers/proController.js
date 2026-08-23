@@ -686,6 +686,134 @@ exports.getProDashboard = async (req, res) => {
 // ─── Stripe Connect : onboarding pro ─────────────────────────────────────────
 
 /**
+ * GET /pro/marketplace/payouts
+ * Historique des versements effectués au pro.
+ * Deux sources :
+ *  - 'service_sale' : commande de service dont les fonds ont été reversés
+ *    (payoutStatus === 'released'). Montant versionné = proAmount.
+ *  - 'referral' : versements du programme de parrainage
+ *    (ReferralPayout status === 'paid'). Montant = totalAmountCents.
+ */
+exports.listProPayouts = async (req, res) => {
+  try {
+    const lang = req.query.lang || 'fr';
+    const { ProService, ServiceOrder } = getModels(lang);
+    const proId = req.identity && req.identity._id;
+    if (!proId) return res.status(401).json({ success: false, message: 'Authentification requise' });
+
+    const proServices = await ProService.find({ pro: proId, status: { $ne: 'deleted' } }, '_id');
+    const serviceIds = proServices.map(s => s._id);
+
+    const referralPayouts = db.referralPayouts
+      ? await db.referralPayouts.find({ sponsorUserId: proId, status: 'paid' })
+          .populate({ path: 'commissionIds', options: { sort: { createdAt: 1 } },
+            populate: { path: 'referredUserId', select: 'email fullName firstName lastName' } })
+          .sort({ paidAt: -1, createdAt: -1 })
+          .lean()
+      : [];
+
+    // Pour les abonnements (pro_subscription) : libellé « Abonnement <plan> »
+    const subPlanName = {};
+    try {
+      const subIds = referralPayouts
+        .flatMap((p) => (p.commissionIds || []).map((c) => c.source && c.source.subscriptionId))
+        .filter(Boolean);
+      if (subIds.length && db.subscription && db.plans) {
+        const subs = await db.subscription.find({ _id: { $in: subIds } }).select('planId').lean();
+        const planIds = subs.map((s) => s.planId).filter(Boolean);
+        const plans = planIds.length
+          ? await db.plans.find({ _id: { $in: planIds } }).select('name').lean()
+          : [];
+        const planMap = new Map(plans.map((pl) => [String(pl._id), pl.name]));
+        subs.forEach((s) => {
+          subPlanName[String(s._id)] = planMap.get(String(s.planId)) || null;
+        });
+      }
+    } catch (e) {
+      console.error('[ProPayouts] subscription plan lookup error:', e.message);
+    }
+
+    const servicePayouts = await ServiceOrder.find({
+      service: { $in: serviceIds },
+      payoutStatus: 'released',
+      proAmount: { $gt: 0 },
+    })
+      .sort({ payoutReleasedAt: -1, createdAt: -1 })
+      .populate('buyer', 'name email image avatar')
+      .populate('property_id', 'title address _id')
+      .lean();
+
+    const serviceData = servicePayouts.map((o) => {
+      const svc = o.serviceSnapshot || o.service_snapshot || o.service || {};
+      return {
+        _id: o._id,
+        date: o.payoutReleasedAt || o.confirmedAt || o.createdAt || null,
+        amount: Math.round(Number(o.proAmount || 0) * 100) / 100,
+        totalPriceTTC: o.totalPriceTTC || 0,
+        totalPriceHT: o.totalPriceHT || 0,
+        commissionHT: o.commissionHT || 0,
+        serviceTitle: svc.title_fr || svc.title || svc.title_en || '(service sans titre)',
+        orderNumber: String(o._id || '').slice(-6).toUpperCase(),
+        buyer: o.buyer ? { name: o.buyer.name, email: o.buyer.email } : null,
+        source: 'service_sale',
+      };
+    });
+
+    const referralData = referralPayouts.map((p) => {
+      const entries = (p.commissionIds || []).map((c) => {
+        const referred = c.referredUserId;
+        const solved = { name: null, email: null };
+        if (referred) {
+          solved.name = referred.fullName || [referred.firstName, referred.lastName].filter(Boolean).join(' ') || null;
+          solved.email = referred.email || null;
+        }
+        let action = null;
+        if (c.revenueType === 'pro_subscription') {
+          const plan = c.source && subPlanName[String(c.source.subscriptionId)];
+          action = { type: 'subscription', planName: plan || null };
+        } else if (c.revenueType === 'particulier_service' || c.revenueType === 'pro_service') {
+          action = { type: 'service', planName: null };
+        }
+        return { filleul: solved, action };
+      });
+      return {
+        _id: p._id,
+        date: p.paidAt || p.createdAt || null,
+        amount: Math.round((Number(p.totalAmountCents || 0) / 100) * 100) / 100,
+        totalPriceHT: null,
+        commissionHT: null,
+        serviceTitle: null,
+        orderNumber: String(p._id || '').slice(-6).toUpperCase(),
+        buyer: null,
+        source: 'referral',
+        filleuls: entries.map((e) => e.filleul),
+        actions: entries.map((e) => e.action).filter(Boolean),
+      };
+    });
+
+    const data = [...serviceData, ...referralData].sort((a, b) => {
+      const ta = a.date ? new Date(a.date).getTime() : 0;
+      const tb = b.date ? new Date(b.date).getTime() : 0;
+      return tb - ta;
+    });
+
+    const totalAmount = Math.round(data.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
+
+    return res.json({
+      success: true,
+      data: {
+        payouts: data,
+        totalAmount,
+        count: data.length,
+        sources: { service_sale: serviceData.length, referral: referralData.length },
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
+  }
+};
+
+/**
  * POST /pro/marketplace/stripe/onboard
  * Crée ou récupère le compte Stripe Connect Express du pro
  * et retourne le lien d'onboarding.

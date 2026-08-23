@@ -740,6 +740,15 @@ module.exports = {
         !findUser.trialUserForPlan &&
         findUser.freeTrialStatus === "pending"
       ) {
+        // Durée de l'essai : trialPeriod du plan (fallback 3 jours).
+        const trialPlan = await db.plans.findById(planId);
+        const trialDays =
+          trialPlan?.trialPeriod && Number(trialPlan.trialPeriod) > 0
+            ? Number(trialPlan.trialPeriod)
+            : 3;
+        const trialExpiryDate = new Date(
+          now.getTime() + trialDays * 24 * 60 * 60 * 1000
+        );
         const transaction = await db.payments.create({
           userId,
           planId,
@@ -757,14 +766,18 @@ module.exports = {
             trialUserForPlan: planId,
             freeTrialStatus: "done",
             trialPlanDate: new Date(),
+            trialExpiryDate,
           },
         );
-        await agenda.schedule("in 3 days", "deactivate-trial-plan", { userId });
-        // await agenda.schedule("in 2 minutes", "deactivate-trial-plan", { userId });
+        await agenda.schedule(
+          trialExpiryDate,
+          "deactivate-trial-plan",
+          { userId },
+        );
         return res.status(200).json({
           success: true,
           message: "Trial plan activated.",
-          data: transaction,
+          data: { transaction, trialDays, trialExpiryDate },
         });
       } else {
         return res.status(400).json({

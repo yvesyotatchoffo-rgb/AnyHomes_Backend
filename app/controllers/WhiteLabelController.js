@@ -3,6 +3,13 @@ const mongoose = require('mongoose');
 const { sendEmail } = require('../config/brevo.config');
 const BREVO_TEMPLATES = require('../utls/constants').BREVO;
 
+// MarketPlace de services (marque blanche) : mêmes collections que la
+// MarketPlace publique AnyHomes.
+const ProServiceEn = require('../modules/services-marketplace/models/ProService_en.model');
+const ProServiceFr = require('../modules/services-marketplace/models/ProService_fr.model');
+const ServiceOrderEn = require('../modules/services-marketplace/models/ServiceOrder_en.model');
+const ServiceOrderFr = require('../modules/services-marketplace/models/ServiceOrder_fr.model');
+
 const User = db.users;
 const AgencyMember = db.agencyMember;
 const AgencyHotLeadThreshold = db.agencyHotLeadThreshold;
@@ -402,5 +409,71 @@ exports.deleteCollaborator = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Collaborateur supprimé' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── MarketPlace dédiée (marque blanche) ─────────────────────────────────────
+// Retourne les services à la carte (version light) et les ventes de l'agence.
+// Seules les VENTES RÉALISÉES SUR L'APP MARQUE BLANCHE sont comptabilisées :
+//  - services proposés : ceux du pro-agence lui-même (pro === agencyId),
+//    seuls services visibles sur la MarketPlace de marque blanche ;
+//  - commandes : uniquement celles dont l'acheteur est membre/cliente de
+//    l'agence (buyer.whiteLabelAgencyId === agencyId), c.-à-d. passées depuis
+//    l'app marque blanche — et non depuis la MarketPlace publique AnyHomes.
+exports.agencyMarketplaceSoldServices = async (req, res) => {
+  try {
+    const lang = req.query.lang === 'en' ? 'en' : 'fr';
+    const agencyId = getAgencyId(req);
+    if (!agencyId) {
+      return res.status(401).json({ success: false, message: 'Authentification requise' });
+    }
+
+    const ProService = lang === 'en' ? ProServiceEn : ProServiceFr;
+    const ServiceOrder = lang === 'en' ? ServiceOrderEn : ServiceOrderFr;
+
+    // Membres / clients de l'agence (utilisateurs de l'app marque blanche)
+    const members = await User.find({ whiteLabelAgencyId: agencyId, isDeleted: false })
+      .select('_id')
+      .lean();
+    const memberIds = members.map((m) => m._id);
+
+    // Services à la carte de l'agence (titre + prix HT, version light)
+    const services = await ProService.find({ pro: agencyId, status: 'active' })
+      .sort({ order: 1, createdAt: -1 })
+      .populate('pro', '_id fullName firstName lastName companyName image')
+      .lean();
+
+    const serviceIds = services.map((s) => s._id);
+    const orders = await ServiceOrder.find({
+      service: { $in: serviceIds },
+      buyer: { $in: memberIds },
+    })
+      .sort({ createdAt: -1 })
+      .populate('buyer', 'name email image avatar')
+      .populate('property_id', 'title address _id')
+      .lean();
+
+    const lightServices = services.map((s) => ({
+      _id: s._id,
+      title: s.title_fr || s.title,
+      titleEn: s.title_en || null,
+      priceHT: s.priceHT != null ? s.priceHT : Math.round((s.priceTTC / 1.2) * 100) / 100,
+      priceTTC: s.priceTTC,
+      status: s.status,
+      is_free: s.is_free === true,
+      quantity: s.quantity,
+      city: s.city || null,
+      pro: s.pro ? {
+        _id: s.pro._id,
+        fullName: s.pro.fullName || s.pro.companyName || null,
+        firstName: s.pro.firstName || null,
+        lastName: s.pro.lastName || null,
+      } : null,
+    }));
+
+    return res.json({ success: true, data: { services: lightServices, orders } });
+  } catch (err) {
+    console.error('[WhiteLabelController] agencyMarketplaceSoldServices error:', err);
+    return res.status(500).json({ success: false, message: 'Erreur serveur', error: err.message });
   }
 };

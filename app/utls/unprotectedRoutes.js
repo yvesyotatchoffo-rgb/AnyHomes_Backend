@@ -19,6 +19,7 @@ module.exports = {
     "/contactTeam/detail",
     "/payment/webhook",
     "/plan/listing",
+    "/plan/tva",
     "/quicksearch/list",
     "/user/checkAccount",
     "/user/emiision-detail",

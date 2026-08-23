@@ -4,6 +4,59 @@ var mongoose = require("mongoose");
 const { ObjectId } = require("mongoose").Types;
 const stripe = process.env.STRIPE_KEY ? require("stripe")(process.env.STRIPE_KEY) : null;
 
+/**
+ * Applied la réduction annuelle (annualDiscount) sur le pricing :
+ * le prix annuel est recalculé comme 12 × prix mensuel × (1 - réduction/100).
+ */
+function applyAnnualDiscount(pricing, discount) {
+  if (!Array.isArray(pricing)) return pricing;
+  const monthly = pricing.find((p) => p.interval === "month");
+  const annual = pricing.find((p) => p.interval === "year");
+  const pct = Number(discount);
+  if (monthly && annual && !isNaN(pct)) {
+    annual.unit_amount = Math.round(Number(monthly.unit_amount) * 12 * (1 - pct / 100));
+    annual.currency = annual.currency || monthly.currency;
+    annual.interval = "year";
+    annual.interval_count = annual.interval_count || 1;
+  }
+  return pricing;
+}
+
+/**
+ * Crée les prix Stripe pour le pricing d'un plan et renvoie le pricing enrichi
+ * de `stripe_price_id`. `productId` est réutilisé s'il existe.
+ */
+async function createStripePrices(pricing, productId) {
+  if (!stripe) return pricing;
+  for (const itm of pricing) {
+    const stripePrice = await stripe.prices.create({
+      product: productId,
+      unit_amount: Math.round(Number(itm.unit_amount) * 100),
+      currency: itm.currency,
+      recurring: {
+        interval: itm.interval ? itm.interval : "month",
+        interval_count: itm.interval_count ? itm.interval_count : 1,
+      },
+    });
+    itm.stripe_price_id = stripePrice.id;
+  }
+  return pricing;
+}
+
+/** Récupère (ou crée) le Stripe product d'un plan existant. */
+async function getOrCreateProduct(plan) {
+  if (!stripe) return null;
+  const prevPriceId = plan?.pricing?.[0]?.stripe_price_id;
+  if (prevPriceId) {
+    try {
+      const prev = await stripe.prices.retrieve(prevPriceId);
+      if (prev?.product) return prev.product;
+    } catch (e) { /* ignore */ }
+  }
+  const product = await stripe.products.create({ name: plan?.name || "plan" });
+  return product.id;
+}
+
 module.exports = {
   /**
    * Creating Plans
@@ -47,28 +100,16 @@ module.exports = {
         body.status = "active";
         body.createdAt = new Date();
         body.updatedAt = new Date();
-        let pricing = body.pricing;
-        if (stripe) {
+        let pricing = applyAnnualDiscount(body.pricing, body.annualDiscount);
+        body.pricing = pricing;
+        if (stripe && Array.isArray(pricing) && pricing.length) {
           const product = await stripe.products.create({
             name: body.name,
           });
           body.stripe_product_id = product.id;
-          if (pricing) {
-            for await (const itm of pricing) {
-              const stripePrice = await stripe.prices.create({
-                product: product.id,
-                unit_amount: Number(itm.unit_amount) * 100,
-                currency: itm.currency,
-                recurring: {
-                  interval: itm.interval ? itm.interval : "month",
-                  interval_count: itm.interval_count ? itm.interval_count : 1,
-                },
-              });
-              itm.stripe_price_id = stripePrice.id;
-            }
-          }
+          pricing = await createStripePrices(pricing, product.id);
+          body.pricing = pricing;
         }
-        body.pricing = pricing;
         const planAdded = await db.plans.create(body);
         return res.status(200).json({
           status: 200,
@@ -188,7 +229,11 @@ module.exports = {
             monthlyPrice: "$monthlyPrice",
             yearlyPrice: "$yearlyPrice",
             pricing: "$pricing",
+            annualDiscount: "$annualDiscount",
             planType: "$planType",
+            userType: "$userType",
+            whiteLabelEnabled: "$whiteLabelEnabled",
+            whiteLabelMaxLeads: "$whiteLabelMaxLeads",
             addedBy: "$userDetails",
             role: "$role",
             otherDetails: "$otherDetails",
@@ -246,6 +291,82 @@ module.exports = {
   },
 
   /**
+   * Duplique un plan : même contenu, nom + " Copie", statut inactif.
+   */
+  duplicatePlan: async (req, res) => {
+    try {
+      const id = req.body.id;
+      if (!id) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          error: { code: 404, message: constants.COMMON.PAYLOAD_MISSING },
+        });
+      }
+      const original = await db.plans.findOne({ _id: id, isDeleted: false });
+      if (!original) {
+        return res.status(404).json({
+          status: 404,
+          success: false,
+          error: { code: 404, message: constants.PLAN.NOT_FOUND },
+        });
+      }
+
+      // Nom : "<original> Copie", puis "<original> Copie (2)"… si déjà pris.
+      const base = `${original.name} Copie`.toLowerCase().trim();
+      let name = base;
+      let n = 2;
+      while (await db.plans.findOne({ name, isDeleted: false })) {
+        name = `${base} ${n}`;
+        n += 1;
+      }
+
+      const doc = original.toObject();
+      delete doc._id;
+      delete doc.__v;
+      delete doc.createdAt;
+      delete doc.updatedAt;
+      delete doc.isDeleted;
+      delete doc.status;
+
+      let pricing = (original.pricing || []).map((p) => ({
+        unit_amount: p.unit_amount,
+        currency: p.currency,
+        interval: p.interval,
+        interval_count: p.interval_count,
+      }));
+
+      doc.name = name;
+      doc.status = "deactive"; // statut Inactif
+      doc.isDeleted = false;
+      doc.userType = original.userType || "individual";
+      doc.addedBy = new ObjectId(req.identity.id);
+      doc.createdAt = new Date();
+      doc.updatedAt = new Date();
+      doc.pricing = pricing;
+
+      if (stripe && pricing.length) {
+        const productId = await getOrCreateProduct(original);
+        doc.pricing = await createStripePrices(pricing, productId);
+      }
+
+      const planAdded = await db.plans.create(doc);
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        message: constants.PLAN.CREATED,
+        data: planAdded,
+      });
+    } catch (err) {
+      console.log(err);
+      return res.status(400).json({
+        success: false,
+        error: { code: 400, message: "" + err },
+      });
+    }
+  },
+
+  /**
    * update Plan
    */
 
@@ -261,11 +382,28 @@ module.exports = {
         });
       }
       delete body.id;
-      delete body.pricing;
+
+      let pricing = body.pricing;
+      if (Array.isArray(pricing)) {
+        pricing = applyAnnualDiscount(pricing, body.annualDiscount);
+        body.pricing = pricing;
+        if (stripe) {
+          const existing = await db.plans.findById(id);
+          const productId = await getOrCreateProduct(existing);
+          if (productId) {
+            pricing = await createStripePrices(pricing, productId);
+            body.pricing = pricing;
+          }
+        }
+      } else {
+        delete body.pricing;
+      }
+
       // Sync offMarket boolean from otherDetails.accessToOffMarketProps
       if (body.otherDetails?.accessToOffMarketProps?.key !== undefined) {
         body.offMarket = body.otherDetails.accessToOffMarketProps.key !== 'not_available';
       }
+      body.updatedAt = new Date();
       let updated = await db.plans.updateOne({ _id: id }, { $set: body });
       if (updated.matchedCount === 0) {
         return res.status(404).json({

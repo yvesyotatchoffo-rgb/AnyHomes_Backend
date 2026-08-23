@@ -27,6 +27,12 @@ module.exports = (mongoose) => {
       pricing: {
         type: Array,
       },
+      // Réduction annuelle en % (0 = pas de remise). Sert à calculer
+      // automatiquement le pricing annuel = 12 × prix mensuel × (1 - réduction/100).
+      annualDiscount: {
+        type: Number,
+        default: 0,
+      },
       // interval: {
       //   type: String,
       //   default: "",
@@ -81,6 +87,12 @@ module.exports = (mongoose) => {
         type: String,
         enum: ["free", "paid"],
         default: "free",
+      },
+      // Type d'utilisateur autorisé à souscrire ce plan
+      userType: {
+        type: String,
+        enum: ["individual", "pro"],
+        default: "individual",
       },
       offMarket: {
         type: Boolean
